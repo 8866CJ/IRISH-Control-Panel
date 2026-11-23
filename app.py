@@ -28,15 +28,16 @@ from datetime import datetime, UTC
 import threading
 import time
 from db import db
+import game
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'IRISH-2025'
+app.config['SECRET_KEY'] = 'IRISH-2026'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 if os.environ.get('RENDER'):
     app.config['SQLALCHEMY_DATABASE_URI'] = os.environ['DATABASE_URL'].replace('postgres://', 'postgresql://', 1)
 else:
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///irish.db'
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///irish2026.db'  # new schema for BUILT; old irish.db is left alone
 
 # Now initialize your models with this same db
 db.init_app(app)
@@ -55,8 +56,20 @@ field_fault_active = False
 with app.app_context():
     db.create_all()
 
+def timer_payload(match):
+    """What every screen needs each tick: clock, period, HUB side mapping."""
+    period, clock, red_side = game.match_state(game.MATCH_LENGTH - match.match_time_remaining)
+    return {
+        'match_id': match.id,
+        'time_remaining': clock,
+        'period': period,
+        'is_endgame': period == 'END GAME',
+        'red_side_alliance': red_side,  # which alliance FUEL in the RED side of the HUB counts for
+        'field_fault': field_fault_active,
+    }
+
 def match_timer():
-    """Background timer for match countdown"""
+    """Background timer: AUTO 0:20, 3s scoring delay, TELEOP 2:20 in one run."""
     global timer_running, current_match_id, field_fault_active
 
     with app.app_context():
@@ -66,54 +79,16 @@ def match_timer():
 
         while timer_running and match.match_time_remaining > 0:
             time.sleep(1)
-            
+
             # Skip timer countdown if field fault is active
             if field_fault_active:
                 continue
-            
+
             match.match_time_remaining -= 1
-
-            # Check for endgame (30 seconds left)
-            if match.match_time_remaining == 30 and not match.is_endgame:
-                match.is_endgame = True
-                db.session.commit()
-                socketio.emit('endgame_started', {'match_id': current_match_id})
-
-            # Check for red bonus timer
-            if match.red_bonus_active and match.red_bonus_time_remaining > 0:
-                match.red_bonus_time_remaining -= 1
-                if match.red_bonus_time_remaining == 0:
-                    match.red_bonus_active = False
-                    db.session.commit()
-                    socketio.emit('bonus_ended', {
-                        'match_id': current_match_id,
-                        'alliance': 'red'
-                    })
-            
-            # Check for blue bonus timer
-            if match.blue_bonus_active and match.blue_bonus_time_remaining > 0:
-                match.blue_bonus_time_remaining -= 1
-                if match.blue_bonus_time_remaining == 0:
-                    match.blue_bonus_active = False
-                    db.session.commit()
-                    socketio.emit('bonus_ended', {
-                        'match_id': current_match_id,
-                        'alliance': 'blue'
-                    })
-
+            payload = timer_payload(match)
+            match.is_endgame = payload['is_endgame']
             db.session.commit()
-
-            # Emit timer update every second
-            socketio.emit('timer_update', {
-                'match_id': current_match_id,
-                'time_remaining': match.match_time_remaining,
-                'is_endgame': match.is_endgame,
-                'red_bonus_active': match.red_bonus_active,
-                'red_bonus_time': match.red_bonus_time_remaining if match.red_bonus_active else 0,
-                'blue_bonus_active': match.blue_bonus_active,
-                'blue_bonus_time': match.blue_bonus_time_remaining if match.blue_bonus_active else 0,
-                'field_fault': field_fault_active
-            })
+            socketio.emit('timer_update', payload)
 
         # Match ended
         if timer_running:
@@ -122,56 +97,44 @@ def match_timer():
             calculate_rps(match)
             db.session.commit()
             socketio.emit('match_ended', {'match_id': current_match_id})
-            
+
             # Wait 1 second then clear endgame indicator
             time.sleep(1)
             socketio.emit('clear_endgame', {'match_id': current_match_id})
 
 def calculate_rps(match):
-    """Calculate Ranking Points at match end"""
-    # Reset all RPs before recalculating
-    match.red_win_rp = False
-    match.blue_win_rp = False
-    match.red_climb_rp = False
-    match.blue_climb_rp = False
-    
-    # Win RP
-    if match.red_score > match.blue_score:
-        match.red_win_rp = True
-    elif match.blue_score > match.red_score:
-        match.blue_win_rp = True
-    # Tie gives 0 win RPs
+    """Set RP flags and update team rankings. Safe to call repeatedly:
+    only the change since the last call is added to the teams."""
+    counts_for_ranking = (match.match_type or '').lower() == 'qualification'
+    for a in ('red', 'blue'):
+        auto, fuel, _, total = game.ranking_points(match, a)
+        setattr(match, f'{a}_auto_rp', auto)
+        setattr(match, f'{a}_fuel_rp', fuel)
+        total = total if counts_for_ranking else 0
+        delta = total - (getattr(match, f'{a}_rp') or 0)
+        setattr(match, f'{a}_rp', total)
+        if delta:
+            for t in (getattr(match, f'{a}_team1'), getattr(match, f'{a}_team2')):
+                if t:
+                    add_rps_to_team(t.id, delta)
 
-    # Tele-op RP (AND ONE bonus activated)
-    # Already tracked in real-time
-
-    # Climb RP (combined bench points >= 20)
-    red_climb_points = (match.red_park * 2) + (match.red_slight_ramp * 6) + (match.red_climb * 14)
-    blue_climb_points = (match.blue_park * 2) + (match.blue_slight_ramp * 6) + (match.blue_climb * 14)
-
-    if red_climb_points >= 20:
-        match.red_climb_rp = True
-    if blue_climb_points >= 20:
-        match.blue_climb_rp = True
-    
-    # Distribute RPs to teams
-    red_total_rps = int(match.red_win_rp) + int(match.red_teleop_rp) + int(match.red_climb_rp)
-    blue_total_rps = int(match.blue_win_rp) + int(match.blue_teleop_rp) + int(match.blue_climb_rp)
-    
-    # Add RPs to each team on the red alliance
-    if match.red_team1:
-        add_rps_to_team(match.red_team1.id, red_total_rps)
-    if match.red_team2:
-        add_rps_to_team(match.red_team2.id, red_total_rps)
-    
-    # Add RPs to each team on the blue alliance
-    if match.blue_team1:
-        add_rps_to_team(match.blue_team1.id, blue_total_rps)
-    if match.blue_team2:
-        add_rps_to_team(match.blue_team2.id, blue_total_rps)
-    
     # Update rankings after distributing points
     update_rankings()
+
+def recount(match):
+    """Rebuild every count and both scores from the match's event log."""
+    for a in ('red', 'blue'):
+        for t in game.COUNT_TYPES:
+            setattr(match, f'{a}_{t}', 0)
+    match.connection = False
+    for e in MatchEvent.query.filter_by(match_id=match.id).all():
+        if e.event_type == 'connection':
+            match.connection = True
+        elif e.event_type in game.COUNT_TYPES and e.alliance in ('red', 'blue'):
+            key = f'{e.alliance}_{e.event_type}'
+            setattr(match, key, getattr(match, key) + 1)
+    match.red_score = game.score(match, 'red')
+    match.blue_score = game.score(match, 'blue')
 
 def add_rps_to_team(team_id, rps):
     """Add ranking points to a team"""
@@ -233,6 +196,20 @@ def rankings():
 def admin_panel():
     return render_template('admin.html')
 
+TEAM_KEYS = ('red_team1', 'red_team2', 'blue_team1', 'blue_team2')
+
+def match_dict(m):
+    """All match columns + team numbers, used by every match payload."""
+    d = {c.name: getattr(m, c.name) for c in Match.__table__.columns
+         if c.name not in ('start_time', 'end_time')}
+    for k in TEAM_KEYS:
+        team = getattr(m, k)
+        d[k] = team.number if team else ''
+    d['match_id'] = m.id
+    d['red_win_rp'] = m.red_score > m.blue_score
+    d['blue_win_rp'] = m.blue_score > m.red_score
+    return d
+
 @app.route('/api/current_match')
 def get_current_match():
     # Get the most relevant match
@@ -241,82 +218,30 @@ def get_current_match():
         match = Match.query.filter_by(status='scheduled').first()
     if not match:
         match = Match.query.order_by(Match.id.desc()).first()
-    
+
     if match:
-        return jsonify({
-            'id': match.id,
-            'match_number': match.match_number,
-            'match_type': match.match_type,  # Add this line
-            'red_team1': match.red_team1.number if match.red_team1 else '',
-            'red_team2': match.red_team2.number if match.red_team2 else '',
-            'blue_team1': match.blue_team1.number if match.blue_team1 else '',
-            'blue_team2': match.blue_team2.number if match.blue_team2 else '',
-            'red_score': match.red_score,
-            'blue_score': match.blue_score,
-            'status': match.status,
-            'red_bucket_normal': match.red_bucket_normal,
-            'red_bucket_bonus': match.red_bucket_bonus,
-            'red_human_bucket': match.red_human_bucket,
-            'red_park': match.red_park,
-            'red_slight_ramp': match.red_slight_ramp,
-            'red_climb': match.red_climb,
-            'red_fouls': match.red_fouls,
-            'red_tech_fouls': match.red_tech_fouls,
-            'blue_bucket_normal': match.blue_bucket_normal,
-            'blue_bucket_bonus': match.blue_bucket_bonus,
-            'blue_human_bucket': match.blue_human_bucket,
-            'blue_park': match.blue_park,
-            'blue_slight_ramp': match.blue_slight_ramp,
-            'blue_climb': match.blue_climb,
-            'blue_fouls': match.blue_fouls,
-            'blue_tech_fouls': match.blue_tech_fouls,
-            'red_win_rp': match.red_win_rp,
-            'blue_win_rp': match.blue_win_rp,
-            'red_teleop_rp': match.red_teleop_rp,
-            'blue_teleop_rp': match.blue_teleop_rp,
-            'red_climb_rp': match.red_climb_rp,
-            'blue_climb_rp': match.blue_climb_rp
-        })
-    else:
-        return jsonify({
-            'match_number': 1,
-            'match_type': 'Qualification',  # Add this line
-            'red_team1': '',
-            'red_team2': '',
-            'blue_team1': '',
-            'blue_team2': '',
-            'red_score': 0,
-            'blue_score': 0,
-            'status': 'scheduled'
-        })
+        return jsonify(match_dict(match))
+    return jsonify({
+        'match_number': 1,
+        'match_type': 'Qualification',
+        'red_team1': '',
+        'red_team2': '',
+        'blue_team1': '',
+        'blue_team2': '',
+        'red_score': 0,
+        'blue_score': 0,
+        'status': 'scheduled'
+    })
 
 @app.route('/api/matches')
 def get_matches():
-    matches = Match.query.all()
-    return jsonify([{
-        'id': m.id,
-        'match_number': m.match_number,
-        'match_type': m.match_type,  # Add this line
-        'red_team1': {'number': m.red_team1.number} if m.red_team1 else None,
-        'red_team2': {'number': m.red_team2.number} if m.red_team2 else None,
-        'blue_team1': {'number': m.blue_team1.number} if m.blue_team1 else None,
-        'blue_team2': {'number': m.blue_team2.number} if m.blue_team2 else None,
-        'red_score': m.red_score,
-        'blue_score': m.blue_score,
-        'status': m.status,
-        'time_remaining': m.match_time_remaining,
-        'is_endgame': m.is_endgame,
-        'red_bonus_active': m.red_bonus_active,
-        'red_bonus_time': m.red_bonus_time_remaining,
-        'blue_bonus_active': m.blue_bonus_active,
-        'blue_bonus_time': m.blue_bonus_time_remaining,
-        'red_teleop_rp': m.red_teleop_rp,
-        'blue_teleop_rp': m.blue_teleop_rp,
-        'red_climb_rp': m.red_climb_rp,
-        'blue_climb_rp': m.blue_climb_rp,
-        'red_win_rp': m.red_win_rp,
-        'blue_win_rp': m.blue_win_rp
-    } for m in matches])
+    out = []
+    for m in Match.query.all():
+        d = match_dict(m)
+        for k in TEAM_KEYS:  # FTA/admin expect {'number': n} or null here
+            d[k] = {'number': d[k]} if d[k] != '' else None
+        out.append(d)
+    return jsonify(out)
 
 @app.route('/api/matches/<int:match_id>', methods=['DELETE'])
 def delete_match(match_id):
@@ -605,8 +530,12 @@ def admin_delete_event(event_id):
     event = db.session.get(MatchEvent, event_id)
     if not event:
         return jsonify({'error': 'Event not found'}), 404
-    
+
+    match = db.session.get(Match, event.match_id)
     db.session.delete(event)
+    db.session.flush()
+    if match:
+        recount(match)  # keep the score in sync with the event log
     db.session.commit()
     
     return jsonify({
@@ -622,177 +551,42 @@ def handle_connect():
 def handle_disconnect():
     print('Client disconnected')
 
-@socketio.on('start_match')
-def handle_start_match(data):
-    global current_match_id, timer_thread, timer_running
-
-    match_id = data.get('match_id')
-    match = db.session.get(Match, match_id)
-    if match:
-        # Validate that all teams are assigned before starting match
-        if not (match.red_team1 and match.red_team2 and match.blue_team1 and match.blue_team2):
-            emit('match_start_error', {
-                'error': 'All teams must be assigned before starting the match'
-            })
-            return
-
-        match.status = 'in_progress'
-        match.start_time = datetime.now(UTC)
-        match.match_time_remaining = 135  # 0:30 = 30 seconds
-        match.is_endgame = False
-        match.red_bonus_active = False
-        match.red_bonus_time_remaining = 15
-        match.blue_bonus_active = False
-        match.blue_bonus_time_remaining = 15
-        db.session.commit()
-
-        current_match_id = match_id
-        timer_running = True
-        timer_thread = threading.Thread(target=match_timer)
-        timer_thread.daemon = True
-        timer_thread.start()
-
-        emit('match_started', {
-            'match_id': match_id,
-            'red_team1': match.red_team1.number,
-            'red_team2': match.red_team2.number,
-            'blue_team1': match.blue_team1.number,
-            'blue_team2': match.blue_team2.number
-        })
-
 @socketio.on('score_event')
 def handle_score_event(data):
-    match_id = data.get('match_id')
-    alliance = data.get('alliance')  # 'red' or 'blue'
-    event_type = data.get('event_type')
-    points = data.get('points', 0)
-
-    match = db.session.get(Match, match_id)
+    """One scoring tap. Live FUEL is sent by HUB side ('hub_side': red/blue) and the
+    server works out alliance + AUTO/TELEOP from the clock. Everything else (and
+    review-mode FUEL) is sent with an explicit alliance and event_type."""
+    match = db.session.get(Match, data.get('match_id'))
     if not match:
         return
 
-    # Update match scores and detailed tracking
-    if alliance == 'red':
-        if event_type == 'bucket_normal':
-            match.red_score += points
-            match.red_bucket_normal += 1
-        elif event_type == 'bucket_bonus':
-            match.red_score += points
-            match.red_bucket_bonus += 1
-        elif event_type == 'human_bucket':
-            match.red_score += points
-            match.red_human_bucket += 1
-        elif event_type == 'park':
-            match.red_score += points
-            match.red_park += 1
-        elif event_type == 'slight_ramp':
-            match.red_score += points
-            match.red_slight_ramp += 1
-        elif event_type == 'climb':
-            match.red_score += points
-            match.red_climb += 1
-        elif event_type == 'foul':
-            match.red_fouls += 1
-            match.blue_score += 2  # Penalty points go to opponent only
-        elif event_type == 'tech_foul':
-            match.red_tech_fouls += 1
-            match.blue_score += 5  # Penalty points go to opponent only
+    alliance = data.get('alliance')
+    event_type = data.get('event_type')
+    details = None
+    if event_type == 'fuel':
+        side = data.get('hub_side')
+        if side not in ('red', 'blue'):
+            return
+        alliance, event_type = game.credit_fuel(side, game.MATCH_LENGTH - match.match_time_remaining)
+        details = f'{side} side of HUB'
 
-    elif alliance == 'blue':
-        if event_type == 'bucket_normal':
-            match.blue_score += points
-            match.blue_bucket_normal += 1
-        elif event_type == 'bucket_bonus':
-            match.blue_score += points
-            match.blue_bucket_bonus += 1
-        elif event_type == 'human_bucket':
-            match.blue_score += points
-            match.blue_human_bucket += 1
-        elif event_type == 'park':
-            match.blue_score += points
-            match.blue_park += 1
-        elif event_type == 'slight_ramp':
-            match.blue_score += points
-            match.blue_slight_ramp += 1
-        elif event_type == 'climb':
-            match.blue_score += points
-            match.blue_climb += 1
-        elif event_type == 'foul':
-            match.blue_fouls += 1
-            match.red_score += 2  # Penalty points go to opponent only
-        elif event_type == 'tech_foul':
-            match.blue_tech_fouls += 1
-            match.red_score += 5  # Penalty points go to opponent only
+    if event_type == 'connection':
+        alliance, points = None, 0
+    elif event_type in game.COUNT_TYPES and alliance in ('red', 'blue'):
+        points = game.POINTS.get(event_type) or game.FOUL_POINTS[event_type]
+    else:
+        return
 
-    db.session.commit()
-
-    # Record event
-    event = MatchEvent(
-        match_id=match_id,
-        event_type=event_type,
-        alliance=alliance,
-        points=points
-    )
+    event = MatchEvent(match_id=match.id, event_type=event_type,
+                       alliance=alliance, points=points, details=details)
     db.session.add(event)
+    db.session.flush()
+    recount(match)
     db.session.commit()
+    emit('event_recorded', {'event_id': event.id})  # sender only, powers its Undo button
 
     # Broadcast score update to all clients (display, referee, FTA)
-    socketio.emit('score_updated', {
-        'match_id': match_id,
-        'red_score': match.red_score,
-        'blue_score': match.blue_score,
-        'event_type': event_type,
-        'alliance': alliance,
-        'points': points
-    })
-
-@socketio.on('activate_bonus')
-def handle_activate_bonus(data):
-    match_id = data.get('match_id')
-    alliance = data.get('alliance')
-
-    match = db.session.get(Match, match_id)
-    if not match:
-        return
-    
-    # Check if this alliance's bonus is already active
-    if alliance == 'red':
-        if not match.red_bonus_active:
-            match.red_bonus_active = True
-            match.red_bonus_time_remaining = 15
-            match.red_teleop_rp = True
-            db.session.commit()
-
-            socketio.emit('bonus_activated', {
-                'match_id': match_id,
-                'alliance': 'red',
-                'bonus_time': 15
-            })
-    elif alliance == 'blue':
-        if not match.blue_bonus_active:
-            match.blue_bonus_active = True
-            match.blue_bonus_time_remaining = 15
-            match.blue_teleop_rp = True
-            db.session.commit()
-
-            socketio.emit('bonus_activated', {
-                'match_id': match_id,
-                'alliance': 'blue',
-                'bonus_time': 15
-            })
-
-@socketio.on('end_match')
-def handle_end_match(data):
-    global timer_running
-    match_id = data.get('match_id')
-    match = db.session.get(Match, match_id)
-    if match:
-        timer_running = False
-        match.status = 'completed'
-        match.end_time = datetime.now(UTC)
-        calculate_rps(match)
-        db.session.commit()
-        emit('match_ended', {'match_id': match_id})
+    socketio.emit('score_updated', match_dict(match))
 
 @socketio.on('fta_field_fault')
 def handle_field_fault(data):
@@ -802,16 +596,8 @@ def handle_field_fault(data):
     socketio.emit('field_fault_started', {'match_id': current_match_id})
     # Immediately notify displays of timer state so banner shows without waiting for next tick
     match = db.session.get(Match, current_match_id)
-    socketio.emit('timer_update', {
-        'match_id': current_match_id,
-        'time_remaining': match.match_time_remaining if match else 0,
-        'is_endgame': match.is_endgame if match else False,
-        'red_bonus_active': match.red_bonus_active if match else False,
-        'red_bonus_time': match.red_bonus_time_remaining if match and match.red_bonus_active else 0,
-        'blue_bonus_active': match.blue_bonus_active if match else False,
-        'blue_bonus_time': match.blue_bonus_time_remaining if match and match.blue_bonus_active else 0,
-        'field_fault': field_fault_active
-    })
+    if match:
+        socketio.emit('timer_update', timer_payload(match))
 
 @socketio.on('fta_resume_match')
 def handle_resume_match(data):
@@ -821,16 +607,8 @@ def handle_resume_match(data):
     socketio.emit('field_fault_ended', {'match_id': current_match_id})
     # Immediately notify displays of timer state so banner hides without waiting for next tick
     match = db.session.get(Match, current_match_id)
-    socketio.emit('timer_update', {
-        'match_id': current_match_id,
-        'time_remaining': match.match_time_remaining if match else 0,
-        'is_endgame': match.is_endgame if match else False,
-        'red_bonus_active': match.red_bonus_active if match else False,
-        'red_bonus_time': match.red_bonus_time_remaining if match and match.red_bonus_active else 0,
-        'blue_bonus_active': match.blue_bonus_active if match else False,
-        'blue_bonus_time': match.blue_bonus_time_remaining if match and match.blue_bonus_active else 0,
-        'field_fault': field_fault_active
-    })
+    if match:
+        socketio.emit('timer_update', timer_payload(match))
 
 def get_next_match_number():
     with app.app_context():
@@ -938,127 +716,58 @@ def handle_fta_update_display(data):
 
 @socketio.on('fta_start_match')
 def handle_fta_start_match(data):
-    global current_match_id, timer_thread, timer_running
+    global current_match_id, timer_thread, timer_running, field_fault_active
 
-    # Save or get the match first
     match_id = data.get('match_id')
-    match_type = data.get('match_type', 'Qualification')  # Get match_type with default
-    quick_start = data.get('quick_start', False)  # Check if this is a quick start
-    
-    # Set initial timer based on quick_start flag
-    initial_time = 15 if quick_start else 135
-    
-    # Store team numbers for later use
-    team_numbers = {
-        'red_team1': data.get('red_team1'),
-        'red_team2': data.get('red_team2'),
-        'blue_team1': data.get('blue_team1'),
-        'blue_team2': data.get('blue_team2')
-    }
-    
-    if not match_id:
+    match_type = data.get('match_type', 'Qualification')
+    quick_start = data.get('quick_start', False)  # jump to the last 15s of TELEOP
 
+    match = db.session.get(Match, match_id) if match_id else None
+    if not match:
         supplied_num = data.get('match_number')
-        if supplied_num:
-            try:
-                match_number = int(supplied_num)
-            except Exception:
-                match_number = get_next_match_number()
-        else:
+        try:
+            match_number = int(supplied_num)
+        except (TypeError, ValueError):
             match_number = get_next_match_number()
-
-
-        # Create new match
-        match = Match(
-            match_type=match_type,  # This line already exists, keep it
-            match_number=match_number,
-            status='in_progress',
-            start_time=datetime.now(UTC),
-            match_time_remaining=initial_time,
-            is_endgame=(initial_time <= 30),  # Set endgame if quick start
-            red_bonus_active=False,
-            red_bonus_time_remaining=15,
-            blue_bonus_active=False,
-            blue_bonus_time_remaining=15
-        )
-
-        # Assign teams - auto-create them if they don't exist
-        for team_key in ['red_team1', 'red_team2', 'blue_team1', 'blue_team2']:
-            team_num = data.get(team_key)
-            if team_num and str(team_num).strip():
-                team = Team.query.filter_by(number=int(team_num)).first()
-                if not team:
-                    # Create the team if it doesn't exist
-                    team = Team(number=int(team_num), name=f'Team {team_num}')
-                    db.session.add(team)
-                setattr(match, team_key, team)
-            else:
-                setattr(match, team_key, None)
-
+        match = Match(match_number=match_number)
         db.session.add(match)
-        db.session.commit()
-        match_id = match.id
-    else:
-        match = db.session.get(Match, match_id)
-        if match:
-            match.match_type = match_type  # Update match_type for existing match
-            match.status = 'in_progress'
-            match.start_time = datetime.now(UTC)
-            match.match_time_remaining = initial_time
-            match.is_endgame = (initial_time <= 30)  # Set endgame if quick start
-            match.red_bonus_active = False
-            match.red_bonus_time_remaining = 15
-            match.blue_bonus_active = False
-            match.blue_bonus_time_remaining = 15
-            db.session.commit()
 
-    if match:
-        current_match_id = match_id
-        timer_running = True
-        timer_thread = threading.Thread(target=match_timer)
-        timer_thread.daemon = True
-        timer_thread.start()
+    # Assign teams - auto-create them if they don't exist
+    for team_key in TEAM_KEYS:
+        team_num = data.get(team_key)
+        if team_num and str(team_num).strip():
+            team = Team.query.filter_by(number=int(team_num)).first()
+            if not team:
+                team = Team(number=int(team_num), name=f'Team {team_num}')
+                db.session.add(team)
+            setattr(match, team_key, team)
+        elif not match_id:
+            setattr(match, team_key, None)
 
-        # Transition display to live view with team numbers (use stored numbers as fallback)
-        socketio.emit('show_live', {
-            'match_type': match.match_type,  # Add this line
-            'match_number': match.match_number,
-            'red_team1': match.red_team1.number if match.red_team1 else team_numbers.get('red_team1', '????'),
-            'red_team2': match.red_team2.number if match.red_team2 else team_numbers.get('red_team2', '????'),
-            'blue_team1': match.blue_team1.number if match.blue_team1 else team_numbers.get('blue_team1', '????'),
-            'blue_team2': match.blue_team2.number if match.blue_team2 else team_numbers.get('blue_team2', '????'),
-            'red_score': match.red_score,
-            'blue_score': match.blue_score
-        })
-        
-        # If quick start, immediately send timer update to show endgame indicator
-        if quick_start:
-            socketio.emit('timer_update', {
-                'match_id': match_id,
-                'time_remaining': match.match_time_remaining,
-                'is_endgame': match.is_endgame,
-                'red_bonus_active': match.red_bonus_active,
-                'red_bonus_time': match.red_bonus_time_remaining if match.red_bonus_active else 0,
-                'blue_bonus_active': match.blue_bonus_active,
-                'blue_bonus_time': match.blue_bonus_time_remaining if match.blue_bonus_active else 0,
-                'field_fault': False
-            })
-        
-        # Update referee panel with new match info
-        socketio.emit('match_started', {
-            'match_id': match_id,
-            'match_type': match.match_type,  # Add this line
-            'match_number': match.match_number,
-            'red_team1': match.red_team1.number if match.red_team1 else team_numbers.get('red_team1', '????'),
-            'red_team2': match.red_team2.number if match.red_team2 else team_numbers.get('red_team2', '????'),
-            'blue_team1': match.blue_team1.number if match.blue_team1 else team_numbers.get('blue_team1', '????'),
-            'blue_team2': match.blue_team2.number if match.blue_team2 else team_numbers.get('blue_team2', '????'),
-            'red_score': match.red_score,
-            'blue_score': match.blue_score,
-            'status': 'in_progress'
-        })
+    match.match_type = match_type
+    match.status = 'in_progress'
+    match.start_time = datetime.now(UTC)
+    match.match_time_remaining = 15 if quick_start else game.MATCH_LENGTH
+    db.session.flush()
 
-        emit('match_started', {'match_id': match_id})
+    # A (re)start is a fresh match: drop events left over from an accidental start
+    MatchEvent.query.filter_by(match_id=match.id).delete()
+    recount(match)
+    match.is_endgame = timer_payload(match)['is_endgame']
+    db.session.commit()
+
+    current_match_id = match.id
+    field_fault_active = False
+    timer_running = True
+    timer_thread = threading.Thread(target=match_timer)
+    timer_thread.daemon = True
+    timer_thread.start()
+
+    payload = match_dict(match)
+    socketio.emit('show_live', payload)
+    socketio.emit('timer_update', timer_payload(match))
+    payload['status'] = 'in_progress'
+    socketio.emit('match_started', payload)
 
 @socketio.on('fta_finalize_match')
 def handle_fta_finalize_match(data):
@@ -1075,8 +784,8 @@ def handle_fta_finalize_match(data):
         db.session.commit()
         
         print(f"Match {match_id} finalized with reviewed scores.")
-        print(f"  Red: {match.red_score} pts, RPs: {match.red_teleop_rp + match.red_climb_rp + match.red_win_rp}")
-        print(f"  Blue: {match.blue_score} pts, RPs: {match.blue_teleop_rp + match.blue_climb_rp + match.blue_win_rp}")
+        print(f"  Red: {match.red_score} pts, RPs: {match.red_rp}")
+        print(f"  Blue: {match.blue_score} pts, RPs: {match.blue_rp}")
         
         # Notify all clients that match is finalized
         socketio.emit('match_finalized', {
@@ -1096,31 +805,6 @@ def handle_fta_hide_review(data=None):
     # Hide review banner on live display
     socketio.emit('hide_review')
 
-@socketio.on('fta_show_postmatch')
-def handle_fta_show_postmatch(data):
-    # Incase of incidental reload, Show postmatch screen of loaded match when provided a match id
-    match_id = data.get('match_id')
-    match = db.session.get(Match, match_id)
-    if match:
-        socketio.emit('show_postmatch', {
-            'match_type': match.match_type,
-            'match_number': match.match_number,
-            'red_team1': match.red_team1.number if match.red_team1 else '????',
-            'red_team2': match.red_team2.number if match.red_team2 else '????',
-            'blue_team1': match.blue_team1.number if match.blue_team1 else '????',
-            'blue_team2': match.blue_team2.number if match.blue_team2 else '????',
-            'red_score': match.red_score,
-            'blue_score': match.blue_score,
-            'red_teleop_rp': match.red_teleop_rp,
-            'red_climb_rp': match.red_climb_rp,
-            'red_win_rp': match.red_win_rp,
-            'blue_teleop_rp': match.blue_teleop_rp,
-            'blue_climb_rp': match.blue_climb_rp,
-            'blue_win_rp': match.blue_win_rp
-        })
-    else:
-        print(f"Match ID {match_id} not found for postmatch display.")
-
 @socketio.on('review_complete')
 def handle_review_complete(data):
     """Broadcast that review is complete and showcase can be enabled"""
@@ -1130,107 +814,19 @@ def handle_review_complete(data):
 @socketio.on('delete_event')
 def handle_delete_event(data):
     """Delete a scoring event and recalculate match scores"""
-    event_id = data.get('event_id')
+    event = db.session.get(MatchEvent, data.get('event_id'))
     match_id = data.get('match_id')
-    
-    event = db.session.get(MatchEvent, event_id)
-    if event and event.match_id == match_id:
-        match = db.session.get(Match, match_id)
-        if match:
-            # Reverse the scoring for this event
-            event_type = event.event_type
-            alliance = event.alliance
-            points = event.points
-            
-            # Decrease the specific event counter
-            if alliance == 'red':
-                if event_type == 'bucket_normal':
-                    match.red_bucket_normal = max(0, match.red_bucket_normal - 1)
-                    match.red_score = max(0, match.red_score - points)
-                elif event_type == 'bucket_bonus':
-                    match.red_bucket_bonus = max(0, match.red_bucket_bonus - 1)
-                    match.red_score = max(0, match.red_score - points)
-                elif event_type == 'human_bucket':
-                    match.red_human_bucket = max(0, match.red_human_bucket - 1)
-                    match.red_score = max(0, match.red_score - points)
-                elif event_type == 'park':
-                    match.red_park = max(0, match.red_park - 1)
-                    match.red_score = max(0, match.red_score - points)
-                elif event_type == 'slight_ramp':
-                    match.red_slight_ramp = max(0, match.red_slight_ramp - 1)
-                    match.red_score = max(0, match.red_score - points)
-                elif event_type == 'climb':
-                    match.red_climb = max(0, match.red_climb - 1)
-                    match.red_score = max(0, match.red_score - points)
-                elif event_type == 'foul':
-                    match.red_fouls = max(0, match.red_fouls - 1)
-                    match.blue_score = max(0, match.blue_score - points)
-                elif event_type == 'tech_foul':
-                    match.red_tech_fouls = max(0, match.red_tech_fouls - 1)
-                    match.blue_score = max(0, match.blue_score - points)
-            elif alliance == 'blue':
-                if event_type == 'bucket_normal':
-                    match.blue_bucket_normal = max(0, match.blue_bucket_normal - 1)
-                    match.blue_score = max(0, match.blue_score - points)
-                elif event_type == 'bucket_bonus':
-                    match.blue_bucket_bonus = max(0, match.blue_bucket_bonus - 1)
-                    match.blue_score = max(0, match.blue_score - points)
-                elif event_type == 'human_bucket':
-                    match.blue_human_bucket = max(0, match.blue_human_bucket - 1)
-                    match.blue_score = max(0, match.blue_score - points)
-                elif event_type == 'park':
-                    match.blue_park = max(0, match.blue_park - 1)
-                    match.blue_score = max(0, match.blue_score - points)
-                elif event_type == 'slight_ramp':
-                    match.blue_slight_ramp = max(0, match.blue_slight_ramp - 1)
-                    match.blue_score = max(0, match.blue_score - points)
-                elif event_type == 'climb':
-                    match.blue_climb = max(0, match.blue_climb - 1)
-                    match.blue_score = max(0, match.blue_score - points)
-                elif event_type == 'foul':
-                    match.blue_fouls = max(0, match.blue_fouls - 1)
-                    match.red_score = max(0, match.red_score - points)
-                elif event_type == 'tech_foul':
-                    match.blue_tech_fouls = max(0, match.blue_tech_fouls - 1)
-                    match.red_score = max(0, match.red_score - points)
-            
-            # Delete the event
-            db.session.delete(event)
-            db.session.commit()
-            
-            # Emit updated scores
-            socketio.emit('event_deleted', {
-                'match_id': match_id,
-                'red_score': match.red_score,
-                'blue_score': match.blue_score
-            })
-            socketio.emit('score_updated', {
-                'red_score': match.red_score,
-                'blue_score': match.blue_score
-            })
-
-@socketio.on('update_match_scores')
-def handle_update_match_scores(data):
-    """Manually update match scores during review"""
-    match_id = data.get('match_id')
-    red_score = data.get('red_score')
-    blue_score = data.get('blue_score')
-    
+    if not event or event.match_id != match_id:
+        return
     match = db.session.get(Match, match_id)
-    if match:
-        match.red_score = red_score
-        match.blue_score = blue_score
-        db.session.commit()
-        
-        socketio.emit('scores_updated', {
-            'match_id': match_id,
-            'red_score': red_score,
-            'blue_score': blue_score
-        })
-        socketio.emit('score_updated', {
-            'red_score': red_score,
-            'blue_score': blue_score
-        })
+    db.session.delete(event)
+    db.session.flush()
+    recount(match)
+    db.session.commit()
+
+    payload = match_dict(match)
+    socketio.emit('event_deleted', payload)
+    socketio.emit('score_updated', payload)
 
 @socketio.on('fta_show_postmatch')
 def handle_fta_show_postmatch(data):
@@ -1240,49 +836,19 @@ def handle_fta_show_postmatch(data):
     else:
         # Get most recent match
         match = Match.query.order_by(Match.id.desc()).first()
-    
-    if match:
-        # Ensure match is marked as completed and saved to DB
-        if match.status != 'completed':
-            match.status = 'completed'
-            if not match.end_time:
-                match.end_time = datetime.now(UTC)
-            calculate_rps(match)
-            db.session.commit()
-        
+    if not match:
+        print(f"Match ID {match_id} not found for postmatch display.")
+        return
 
-        socketio.emit('show_postmatch', {
-            'match_type': match.match_type,  # Add this line
-            'match_number': match.match_number,
-            'red_team1': match.red_team1.number if match.red_team1 else '????',
-            'red_team2': match.red_team2.number if match.red_team2 else '????',
-            'blue_team1': match.blue_team1.number if match.blue_team1 else '????',
-            'blue_team2': match.blue_team2.number if match.blue_team2 else '????',
-            'red_score': match.red_score,
-            'blue_score': match.blue_score,
-            'red_bucket_normal': match.red_bucket_normal,
-            'red_bucket_bonus': match.red_bucket_bonus,
-            'red_human_bucket': match.red_human_bucket,
-            'red_park': match.red_park,
-            'red_slight_ramp': match.red_slight_ramp,
-            'red_climb': match.red_climb,
-            'red_fouls': match.red_fouls,
-            'red_tech_fouls': match.red_tech_fouls,
-            'blue_bucket_normal': match.blue_bucket_normal,
-            'blue_bucket_bonus': match.blue_bucket_bonus,
-            'blue_human_bucket': match.blue_human_bucket,
-            'blue_park': match.blue_park,
-            'blue_slight_ramp': match.blue_slight_ramp,
-            'blue_climb': match.blue_climb,
-            'blue_fouls': match.blue_fouls,
-            'blue_tech_fouls': match.blue_tech_fouls,
-            'red_win_rp': match.red_win_rp,
-            'blue_win_rp': match.blue_win_rp,
-            'red_teleop_rp': match.red_teleop_rp,
-            'blue_teleop_rp': match.blue_teleop_rp,
-            'red_climb_rp': match.red_climb_rp,
-            'blue_climb_rp': match.blue_climb_rp
-        })
+    # Ensure match is marked as completed and saved to DB
+    if match.status not in ('completed', 'finalized'):
+        match.status = 'completed'
+        if not match.end_time:
+            match.end_time = datetime.now(UTC)
+    calculate_rps(match)
+    db.session.commit()
+
+    socketio.emit('show_postmatch', match_dict(match))
 
 @socketio.on('load_match_data')
 def handle_load_match_data(data):
@@ -1343,10 +909,6 @@ def handle_fta_stop_match(data):
         match.status = 'stopped'
         match.match_time_remaining = 0
         match.is_endgame = False
-        match.red_bonus_active = False
-        match.red_bonus_time_remaining = 0
-        match.blue_bonus_active = False
-        match.blue_bonus_time_remaining = 0
         db.session.commit()
         socketio.emit('match_stopped', {'match_id': match_id})
         print(f"Match {match_id} stopped successfully")

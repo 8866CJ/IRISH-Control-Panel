@@ -88,7 +88,7 @@
                 </div>
                 <div class="status-item">
                     <span class="status-label">Timer:</span>
-                    <span id="timer-display" class="status-value">2:15</span>
+                    <span id="timer-display" class="status-value">0:20</span>
                 </div>
             </div>
 
@@ -279,7 +279,7 @@
             
             // Reset status displays
             document.getElementById('match-status').textContent = 'Not Started';
-            document.getElementById('timer-display').textContent = '2:15';
+            document.getElementById('timer-display').textContent = '0:20';
             document.getElementById('validation-status').innerHTML = '';
             document.getElementById('match-end-controls').style.display = 'none';
             document.getElementById('field-fault-controls').style.display = 'none';
@@ -410,7 +410,7 @@
             document.getElementById('start-match-btn').disabled = false;
             document.getElementById('quick-start-btn').disabled = false;
             document.getElementById('field-fault-controls').style.display = 'none';
-            document.getElementById('timer-display').textContent = '2:15';
+            document.getElementById('timer-display').textContent = '0:20';
         });
         
         // Field Fault (Pause)
@@ -469,7 +469,7 @@
             const minutes = Math.floor(data.time_remaining / 60);
             const seconds = data.time_remaining % 60;
             document.getElementById('timer-display').textContent = 
-                `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                `${minutes}:${seconds.toString().padStart(2, '0')} ${data.period || ''}`;
         });
 
         socket.on('match_ended', (data) => {

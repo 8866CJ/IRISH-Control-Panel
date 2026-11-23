@@ -1,5 +1,6 @@
 from flask_sqlalchemy import SQLAlchemy
 from db import db
+from game import MATCH_LENGTH
 
 
 class Team(db.Model):
@@ -33,43 +34,31 @@ class Match(db.Model):
     status = db.Column(db.String(20), default='scheduled')  # scheduled, in_progress, completed
     start_time = db.Column(db.DateTime)
     end_time = db.Column(db.DateTime)
-    match_time_remaining = db.Column(db.Integer, default=135)  # seconds (2:15 = 135 seconds)
+    match_time_remaining = db.Column(db.Integer, default=MATCH_LENGTH)  # ticks left of AUTO+delay+TELEOP
     is_endgame = db.Column(db.Boolean, default=False)
-    
-    # Separate bonus tracking for each alliance
-    red_bonus_active = db.Column(db.Boolean, default=False)
-    red_bonus_time_remaining = db.Column(db.Integer, default=15)
-    blue_bonus_active = db.Column(db.Boolean, default=False)
-    blue_bonus_time_remaining = db.Column(db.Integer, default=15)
 
-    # RP tracking
-    red_teleop_rp = db.Column(db.Boolean, default=False)  # AND ONE bonus activated
-    blue_teleop_rp = db.Column(db.Boolean, default=False)
-    red_climb_rp = db.Column(db.Boolean, default=False)  # Combined bench points >= 20
-    blue_climb_rp = db.Column(db.Boolean, default=False)
-    red_win_rp = db.Column(db.Boolean, default=False)
-    blue_win_rp = db.Column(db.Boolean, default=False)
-
-    # Detailed scoring breakdown
-    red_bucket_normal = db.Column(db.Integer, default=0)  # 6 points each
-    red_bucket_bonus = db.Column(db.Integer, default=0)   # 12 points each
-    red_human_bucket = db.Column(db.Integer, default=0)   # 3 points each
-    red_park = db.Column(db.Integer, default=0)           # 2 points each
-    red_slight_ramp = db.Column(db.Integer, default=0)    # 6 points each
-    red_climb = db.Column(db.Integer, default=0)          # 14 points each
-
-    blue_bucket_normal = db.Column(db.Integer, default=0)
-    blue_bucket_bonus = db.Column(db.Integer, default=0)
-    blue_human_bucket = db.Column(db.Integer, default=0)
+    # Scoring counts per alliance (point values live in game.py)
+    red_auto_fuel = db.Column(db.Integer, default=0)
+    red_teleop_fuel = db.Column(db.Integer, default=0)
+    red_leave = db.Column(db.Integer, default=0)
+    red_park = db.Column(db.Integer, default=0)
+    red_minor_foul = db.Column(db.Integer, default=0)   # committed BY red, credited to blue
+    red_major_foul = db.Column(db.Integer, default=0)
+    blue_auto_fuel = db.Column(db.Integer, default=0)
+    blue_teleop_fuel = db.Column(db.Integer, default=0)
+    blue_leave = db.Column(db.Integer, default=0)
     blue_park = db.Column(db.Integer, default=0)
-    blue_slight_ramp = db.Column(db.Integer, default=0)
-    blue_climb = db.Column(db.Integer, default=0)
+    blue_minor_foul = db.Column(db.Integer, default=0)
+    blue_major_foul = db.Column(db.Integer, default=0)
+    connection = db.Column(db.Boolean, default=False)  # all 4 robots; both alliances earn the RP
 
-    # Penalty tracking
-    red_fouls = db.Column(db.Integer, default=0)          # +2 to opponent each
-    red_tech_fouls = db.Column(db.Integer, default=0)     # +5 to opponent each
-    blue_fouls = db.Column(db.Integer, default=0)
-    blue_tech_fouls = db.Column(db.Integer, default=0)
+    # RP results (set by calculate_rps)
+    red_auto_rp = db.Column(db.Boolean, default=False)
+    red_fuel_rp = db.Column(db.Boolean, default=False)
+    blue_auto_rp = db.Column(db.Boolean, default=False)
+    blue_fuel_rp = db.Column(db.Boolean, default=False)
+    red_rp = db.Column(db.Integer, default=0)   # RP already added to team rankings
+    blue_rp = db.Column(db.Integer, default=0)
 
     red_team1 = db.relationship('Team', foreign_keys=[red_team1_id])
     red_team2 = db.relationship('Team', foreign_keys=[red_team2_id])

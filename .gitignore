@@ -19,3 +19,6 @@ build/
 *.egg-info/
 .DS_Store
 .venv-3.12.7/
+
+# graphify knowledge graph output (rebuild with /graphify)
+graphify-out/

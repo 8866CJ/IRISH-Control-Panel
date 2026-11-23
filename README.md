@@ -1,25 +1,26 @@
 # IRISH Control Panel
 
-A comprehensive web-based control system for FIRST Robotics Competition (FRC) events, providing real-time match management, scoring, and display capabilities.
+Field management system for IRISH 2026 (**BUILT**), Team 8866's off-season event. A web-based control system for FIRST Robotics Competition (FRC) events, providing real-time match management, scoring, and display capabilities.
 
 ## Capabilities
 
 ### Match Management
 - Complete match setup with team assignments
-- Automated 2:15 match timer with endgame indicators
+- One continuous match timer: AUTO 0:20, 3s scoring delay, TELEOP 2:20 (TRANSITION, SHIFT 1-4, END GAME)
 - Field fault handling and timer pause/resume
-- Ability to stop match and reset incase of accidental start
+- Ability to stop match and reset incase of accidental start (restart clears that match's events)
 - Match review and post-match analysis
 
 ### Scoring System
-- Real-time teleoperated scoring (buckets, human player)
-- Endgame scoring (park, ramp, climb)
-- AND ONE bonus period activation and tracking
-- Penalty management (fouls, tech fouls)
+- FUEL scored by HUB side: the FMS credits the right alliance from the shift table, with the 3s grace after each swap
+- AUTO FUEL 4 pts, TELEOP FUEL 2 pts, LEAVE 3 pts, PARK 2 pts
+- MINOR FOUL +2 / MAJOR FOUL +6 to the opponent
+- Point values and the FUEL BONUS threshold live in `game.py`
 
 ### Ranking Points
-- Automatic calculation of win, tele-op, and climb ranking points
-- Real-time RP updates during matches
+- Win 3 / Tie 1, AUTO BONUS (both robots LEAVE + 5 AUTO FUEL), FUEL BONUS (80 FUEL, edit `FUEL_BONUS_THRESHOLD`), CONNECTION (both alliances)
+- Only qualification matches add RP to rankings
+- Run `python game.py` to self-check the rules
 
 ### Interfaces
 - **FTA Panel**: Match setup, timer control, field fault management

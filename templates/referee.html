@@ -10,79 +10,64 @@
 </head>
 <body>
     <div class="referee-panel">
-        <div class="header">
-            <h1>IRISH Referee Control Panel</h1>
+        <div class="topbar">
+            <div class="topbar-row">
+                <span class="top-match">Match <span id="match-num">?</span></span>
+                <span class="timer-display" id="match-timer">0:20</span>
+                <span class="bonus-indicator" id="bonus-indicator">AUTO</span>
+            </div>
+            <div class="topbar-row">
+                <span class="red-score">0</span>
+                <span class="teams" id="current-match">Waiting for match…</span>
+                <span class="blue-score">0</span>
+            </div>
+            <div id="endgame-indicator" class="endgame-indicator"></div>
         </div>
 
-        <div class="match-info">
-            <h2>Current Match: <span id="match-num">?</span></h2>
-            <div id="current-match">No match selected</div>
+        <nav class="role-tabs" aria-label="What are you scoring?">
+            <button data-role="red-hub">Red HUB</button>
+            <button data-role="blue-hub">Blue HUB</button>
+            <button data-role="ref">Referee</button>
+            <button data-role="all">All</button>
+        </nav>
+
+        <div class="hub-pair">
+            <section data-show="red-hub all">
+                <button class="score-btn red-btn fuel-btn" data-hub="red">+1 FUEL
+                    <small>RED SIDE of the HUB<br>counts for <b data-hub-label="red">RED · 4pts</b></small>
+                </button>
+            </section>
+            <section data-show="blue-hub all">
+                <button class="score-btn blue-btn fuel-btn" data-hub="blue">+1 FUEL
+                    <small>BLUE SIDE of the HUB<br>counts for <b data-hub-label="blue">BLUE · 4pts</b></small>
+                </button>
+            </section>
         </div>
 
-        <div class="timer-section">
-            <div class="timer-display" id="match-timer">2:15</div>
-            <div id="endgame-indicator"></div>
-            <div id="bonus-indicator"></div>
-        </div>
-
-        <div class="alliance-controls">
-            <div class="red-controls">
-                <div class="alliance-header">RED ALLIANCE</div>
-
-                <div class="scoring-section">
-                    <div class="section-title">Teleoperated Scoring</div>
-                    <button class="score-btn red-btn bucket-btn" data-alliance="red" data-type="bucket">BUCKET <span class="bucket-points">(6pts)</span></button>
-                    <button class="score-btn red-btn" data-alliance="red" data-type="human_bucket">HUMAN PLAYER BUCKET (3pts)</button>
-                    <button class="score-btn neutral-btn" id="red-bonus-activate" data-alliance="red">Activate AND ONE BONUS</button>
+        <section data-show="ref all">
+            <div class="ref-grid">
+                <div class="ref-col">
+                    <div class="section-title" style="color: #ff6b6b">RED ALLIANCE</div>
+                    <button class="score-btn red-btn" data-alliance="red" data-type="leave">LEAVE<br><small>+3 · AUTO</small></button>
+                    <button class="score-btn red-btn" data-alliance="red" data-type="park">PARK<br><small>+2</small></button>
+                    <button class="score-btn penalty-btn" data-alliance="red" data-type="minor_foul">MINOR FOUL<br><small>+2 to Blue</small></button>
+                    <button class="score-btn danger-btn" data-alliance="red" data-type="major_foul">MAJOR FOUL<br><small>+6 to Blue</small></button>
                 </div>
-
-                <div class="scoring-section">
-                    <div class="section-title">Endgame Scoring (BENCH)</div>
-                    <button class="score-btn red-btn" data-alliance="red" data-type="park">PARK (2pts)</button>
-                    <button class="score-btn red-btn" data-alliance="red" data-type="slight_ramp">Slight Ramp (6pts)</button>
-                    <button class="score-btn red-btn" data-alliance="red" data-type="climb">Climb (14pts)</button>
-                </div>
-
-                <div class="scoring-section">
-                    <div class="section-title">Penalties</div>
-                    <button class="score-btn penalty-btn" data-alliance="red" data-type="foul">Foul (+2 to Blue)</button>
-                    <button class="score-btn danger-btn" data-alliance="red" data-type="tech_foul">Tech Foul (+5 to Blue)</button>
+                <div class="ref-col">
+                    <div class="section-title" style="color: #6bb6ff">BLUE ALLIANCE</div>
+                    <button class="score-btn blue-btn" data-alliance="blue" data-type="leave">LEAVE<br><small>+3 · AUTO</small></button>
+                    <button class="score-btn blue-btn" data-alliance="blue" data-type="park">PARK<br><small>+2</small></button>
+                    <button class="score-btn penalty-btn" data-alliance="blue" data-type="minor_foul">MINOR FOUL<br><small>+2 to Red</small></button>
+                    <button class="score-btn danger-btn" data-alliance="blue" data-type="major_foul">MAJOR FOUL<br><small>+6 to Red</small></button>
                 </div>
             </div>
+            <button class="score-btn neutral-btn" data-type="connection">🔗 CONNECTION FORMED<br><small>all 4 robots · RP for both</small></button>
+        </section>
+    </div>
 
-            <div class="blue-controls">
-                <div class="alliance-header">BLUE ALLIANCE</div>
-
-                <div class="scoring-section">
-                    <div class="section-title">Teleoperated Scoring</div>
-                    <button class="score-btn blue-btn bucket-btn" data-alliance="blue" data-type="bucket">BUCKET <span class="bucket-points">(6pts)</span></button>
-                    <button class="score-btn blue-btn" data-alliance="blue" data-type="human_bucket">HUMAN PLAYER BUCKET (3pts)</button>
-                    <button class="score-btn neutral-btn" id="blue-bonus-activate" data-alliance="blue">Activate AND ONE BONUS</button>
-                </div>
-
-                <div class="scoring-section">
-                    <div class="section-title">Endgame Scoring (BENCH)</div>
-                    <button class="score-btn blue-btn" data-alliance="blue" data-type="park">PARK (2pts)</button>
-                    <button class="score-btn blue-btn" data-alliance="blue" data-type="slight_ramp">Slight Ramp (6pts)</button>
-                    <button class="score-btn blue-btn" data-alliance="blue" data-type="climb">Climb (14pts)</button>
-                </div>
-
-                <div class="scoring-section">
-                    <div class="section-title">Penalties</div>
-                    <button class="score-btn penalty-btn" data-alliance="blue" data-type="foul">Foul (+2 to Red)</button>
-                    <button class="score-btn danger-btn" data-alliance="blue" data-type="tech_foul">Tech Foul (+5 to Red)</button>
-                </div>
-            </div>
-        </div>
-
-        <div class="current-scores">
-            <div class="score-display">
-                <span class="red-score">0</span> - <span class="blue-score">0</span>
-            </div>
-            <div class="rp-display" id="rp-display">
-                RPs - Red: 0 | Blue: 0
-            </div>
-        </div>
+    <div class="bottom-bar">
+        <button id="undo-btn" class="undo-btn" disabled>↶ Undo</button>
+        <div class="rp-display" id="rp-display">FUEL · Red 0 | Blue 0</div>
     </div>
 
     <!-- Review Mode Overlay -->
@@ -128,14 +113,13 @@
                         <div class="form-row">
                             <label>Event Type:</label>
                             <select id="add-event-type">
-                                <option value="bucket_normal">Bucket (Normal) - 6pts</option>
-                                <option value="bucket_bonus">Bucket (Bonus) - 12pts</option>
-                                <option value="human_bucket">Human Bucket - 3pts</option>
-                                <option value="park">Park - 2pts</option>
-                                <option value="slight_ramp">Slight Ramp - 6pts</option>
-                                <option value="climb">Climb - 14pts</option>
-                                <option value="foul">Foul - +5 to opponent</option>
-                                <option value="tech_foul">Tech Foul - +15 to opponent</option>
+                                <option value="auto_fuel">AUTO FUEL - 4pts</option>
+                                <option value="teleop_fuel">TELEOP FUEL - 2pts</option>
+                                <option value="leave">LEAVE - 3pts</option>
+                                <option value="park">PARK - 2pts</option>
+                                <option value="minor_foul">MINOR FOUL - +2 to opponent</option>
+                                <option value="major_foul">MAJOR FOUL - +6 to opponent</option>
+                                <option value="connection">CONNECTION (both alliances)</option>
                             </select>
                         </div>
                         <button id="add-event-btn" class="add-event-btn">Add Event</button>
@@ -152,187 +136,89 @@
     <script>
         const socket = io();
         let currentMatchId = null;
-        let redBonusActive = false;
-        let blueBonusActive = false;
+        let myEvents = [];  // ids of events this phone created, for Undo
 
-        // Initialize with default placeholders - wait for match_started event
-        console.log('Referee panel initialized, waiting for match data...');
+        // Role picker: each phone only shows what it scores (remembered per device)
+        function setRole(role) {
+            document.body.dataset.role = role;
+            document.querySelectorAll('.role-tabs button').forEach(b => b.classList.toggle('active', b.dataset.role === role));
+            document.querySelectorAll('[data-show]').forEach(el => { el.hidden = !el.dataset.show.split(' ').includes(role); });
+            try { localStorage.setItem('irish-ref-role', role); } catch (e) {}
+        }
+        document.querySelectorAll('.role-tabs button').forEach(b => b.addEventListener('click', () => setRole(b.dataset.role)));
+        let savedRole = null;
+        try { savedRole = localStorage.getItem('irish-ref-role'); } catch (e) {}
+        setRole(savedRole || 'all');
 
-        function updateScores(match) {
-            document.querySelector('.red-score').textContent = match.red_score;
-            document.querySelector('.blue-score').textContent = match.blue_score;
-            updateRPs(match);
+        function updateUndo() { document.getElementById('undo-btn').disabled = myEvents.length === 0; }
+        document.getElementById('undo-btn').addEventListener('click', () => {
+            const id = myEvents.pop();
+            updateUndo();
+            if (id && currentMatchId) socket.emit('delete_event', { event_id: id, match_id: currentMatchId });
+        });
+        socket.on('event_recorded', (data) => { myEvents.push(data.event_id); updateUndo(); });
+
+        function formatClock(t) {
+            return `${Math.floor(t / 60)}:${(t % 60).toString().padStart(2, '0')}`;
         }
 
-        function updateRPs(match) {
-            let redRPs = 0;
-            let blueRPs = 0;
-
-            if (match.red_win_rp) redRPs += 2;
-            if (match.blue_win_rp) blueRPs += 2;
-            if (match.red_teleop_rp) redRPs += 1;
-            if (match.blue_teleop_rp) blueRPs += 1;
-            if (match.red_climb_rp) redRPs += 1;
-            if (match.blue_climb_rp) blueRPs += 1;
+        function updateScores(m) {
+            document.querySelector('.red-score').textContent = m.red_score;
+            document.querySelector('.blue-score').textContent = m.blue_score;
+            document.getElementById('rp-display').textContent =
+                `FUEL · Red ${m.red_auto_fuel + m.red_teleop_fuel} | Blue ${m.blue_auto_fuel + m.blue_teleop_fuel}` +
+                (m.connection ? ' | CONNECTION ✓' : '');
         }
 
         function updateTimer(data) {
-            const minutes = Math.floor(data.time_remaining / 60);
-            const seconds = data.time_remaining % 60;
-            document.getElementById('match-timer').textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            document.getElementById('match-timer').textContent = formatClock(data.time_remaining);
+            document.getElementById('endgame-indicator').textContent = data.is_endgame ? 'END GAME - 30 SECONDS!' : '';
+            document.getElementById('bonus-indicator').textContent = data.period;
 
-            if (data.is_endgame) {
-                document.getElementById('endgame-indicator').textContent = 'ENDGAME - 30 SECONDS REMAINING!';
-            } else {
-                document.getElementById('endgame-indicator').textContent = '';
-            }
-
-            // Show bonus status for both alliances
-            let bonusText = '';
-            if (data.red_bonus_active) {
-                bonusText += `RED BONUS: ${data.red_bonus_time}s `;
-            }
-            if (data.blue_bonus_active) {
-                bonusText += `BLUE BONUS: ${data.blue_bonus_time}s`;
-            }
-            document.getElementById('bonus-indicator').textContent = bonusText;
+            // Show which alliance each HUB side is crediting right now
+            const auto = data.period === 'AUTO';
+            const owners = { red: data.red_side_alliance, blue: data.red_side_alliance === 'red' ? 'blue' : 'red' };
+            document.querySelectorAll('[data-hub-label]').forEach(el => {
+                el.textContent = `${owners[el.dataset.hubLabel].toUpperCase()} · ${auto ? 4 : 2}pts`;
+            });
         }
 
-        // Scoring buttons
-        document.querySelectorAll('.score-btn[data-type]').forEach(btn => {
+        // Live scoring buttons: server works out points (and for FUEL, which alliance + period)
+        document.querySelectorAll('.score-btn[data-hub], .score-btn[data-type]').forEach(btn => {
             btn.addEventListener('click', () => {
-                const alliance = btn.dataset.alliance;
-                const type = btn.dataset.type;
-                let points = 0;
-                let eventType = type;
-
-                // Set points based on type
-                switch(type) {
-                    case 'bucket':
-                        // Check if bonus is active for this alliance
-                        if ((alliance === 'red' && redBonusActive) || (alliance === 'blue' && blueBonusActive)) {
-                            points = 12;
-                            eventType = 'bucket_bonus';
-                        } else {
-                            points = 6;
-                            eventType = 'bucket_normal';
-                        }
-                        break;
-                    case 'human_bucket': points = 3; break;
-                    case 'park': points = 2; break;
-                    case 'slight_ramp': points = 6; break;
-                    case 'climb': points = 14; break;
-                    case 'foul': points = 2; break; // This will be added to opponent
-                    case 'tech_foul': points = 5; break; // This will be added to opponent
-                }
-
-                if (currentMatchId) {
-                    socket.emit('score_event', {
-                        match_id: currentMatchId,
-                        alliance: alliance,
-                        event_type: eventType,
-                        points: points
-                    });
-                }
+                if (!currentMatchId) return;
+                if (navigator.vibrate) navigator.vibrate(25);  // tap feedback
+                socket.emit('score_event', btn.dataset.hub
+                    ? { match_id: currentMatchId, event_type: 'fuel', hub_side: btn.dataset.hub }
+                    : { match_id: currentMatchId, event_type: btn.dataset.type, alliance: btn.dataset.alliance });
             });
         });
 
-        // Bonus activation buttons
-        document.getElementById('red-bonus-activate').addEventListener('click', () => {
-            if (currentMatchId) {
-                socket.emit('activate_bonus', { match_id: currentMatchId, alliance: 'red' });
-            }
-        });
-
-        document.getElementById('blue-bonus-activate').addEventListener('click', () => {
-            if (currentMatchId) {
-                socket.emit('activate_bonus', { match_id: currentMatchId, alliance: 'blue' });
-            }
-        });
-        
-        // Function to update bucket button points display
-        function updateBucketButtons() {
-            // Update red bucket button
-            const redBucketBtn = document.querySelector('.bucket-btn[data-alliance="red"] .bucket-points');
-            if (redBucketBtn) {
-                redBucketBtn.textContent = redBonusActive ? '(12pts - BONUS!)' : '(6pts)';
-            }
-            
-            // Update blue bucket button
-            const blueBucketBtn = document.querySelector('.bucket-btn[data-alliance="blue"] .bucket-points');
-            if (blueBucketBtn) {
-                blueBucketBtn.textContent = blueBonusActive ? '(12pts - BONUS!)' : '(6pts)';
-            }
-        }
-
         // Socket event listeners
         socket.on('score_updated', (data) => {
-            document.querySelector('.red-score').textContent = data.red_score;
-            document.querySelector('.blue-score').textContent = data.blue_score;
-            
-            // Fetch updated match data to get RP status
-            if (currentMatchId) {
-                fetch('/api/matches')
-                    .then(response => response.json())
-                    .then(matches => {
-                        const match = matches.find(m => m.id === currentMatchId);
-                        if (match) {
-                            updateRPs(match);
-                        }
-                    });
-            }
+            updateScores(data);
+            if (reviewMode) loadMatchEvents();
         });
 
-        socket.on('timer_update', (data) => {
-            updateTimer(data);
-        });
-
-        socket.on('endgame_started', (data) => {
-            document.getElementById('endgame-indicator').textContent = 'ENDGAME - 30 SECONDS REMAINING!';
-        });
-
-        socket.on('bonus_activated', (data) => {
-            if (data.alliance === 'red') {
-                redBonusActive = true;
-            } else if (data.alliance === 'blue') {
-                blueBonusActive = true;
-            }
-            updateBucketButtons();
-            document.getElementById('bonus-indicator').textContent = `${data.alliance.toUpperCase()} BONUS ACTIVE: 15s`;
-        });
-
-        socket.on('bonus_ended', (data) => {
-            if (data.alliance === 'red') {
-                redBonusActive = false;
-            } else if (data.alliance === 'blue') {
-                blueBonusActive = false;
-            }
-            updateBucketButtons();
-            document.getElementById('bonus-indicator').textContent = '';
-        });
+        socket.on('timer_update', updateTimer);
 
         socket.on('match_started', (data) => {
             currentMatchId = data.match_id;
-            redBonusActive = false;
-            blueBonusActive = false;
-            updateBucketButtons();
+            myEvents = [];
+            updateUndo();
             document.getElementById('match-num').textContent = data.match_number;
-            document.getElementById('current-match').innerHTML = `
-                Red: ${data.red_team1}/${data.red_team2} vs Blue: ${data.blue_team1}/${data.blue_team2}
-            `;
-            document.querySelector('.red-score').textContent = data.red_score || 0;
-            document.querySelector('.blue-score').textContent = data.blue_score || 0;
+            document.getElementById('current-match').textContent =
+                `${data.red_team1} ${data.red_team2} vs ${data.blue_team1} ${data.blue_team2}`;
+            updateScores(data);
         });
 
         socket.on('match_ended', (data) => {
             // Don't reload - keep currentMatchId available for review mode
             console.log('Match ended. Match ID:', currentMatchId);
-            // Could optionally show a notification or update UI here
         });
 
         // Review Mode Functionality
         let reviewMode = false;
-        let matchEvents = [];
 
         socket.on('show_review', (data) => {
             // Set the match ID from review mode trigger
@@ -351,9 +237,6 @@
             reviewMode = true;
             document.getElementById('review-mode-overlay').style.display = 'flex';
             loadMatchEvents();
-            // Update review scores with current scores
-            document.getElementById('review-red-score').textContent = document.querySelector('.red-score').textContent;
-            document.getElementById('review-blue-score').textContent = document.querySelector('.blue-score').textContent;
         }
 
         function exitReviewMode() {
@@ -363,35 +246,39 @@
 
         function loadMatchEvents() {
             if (!currentMatchId) {
-                console.log('No current match ID');
                 document.getElementById('scoring-log').innerHTML = '<p class="no-events">No match selected</p>';
                 return;
             }
-            
-            console.log('Loading events for match:', currentMatchId);
+
             fetch(`/api/match_events/${currentMatchId}`)
                 .then(response => response.json())
                 .then(events => {
-                    console.log('Loaded events:', events);
-                    matchEvents = events;
                     displayScoringLog(events);
-                    
                     // Also update current match scores
-                    fetch('/api/matches')
-                        .then(response => response.json())
-                        .then(matches => {
-                            const match = matches.find(m => m.id === currentMatchId);
-                            if (match) {
-                                document.getElementById('review-red-score').textContent = match.red_score;
-                                document.getElementById('review-blue-score').textContent = match.blue_score;
-                            }
-                        });
+                    return fetch('/api/matches').then(r => r.json());
+                })
+                .then(matches => {
+                    const match = matches.find(m => m.id === currentMatchId);
+                    if (match) {
+                        document.getElementById('review-red-score').textContent = match.red_score;
+                        document.getElementById('review-blue-score').textContent = match.blue_score;
+                    }
                 })
                 .catch(err => {
                     console.error('Failed to load match events:', err);
                     document.getElementById('scoring-log').innerHTML = '<p class="error">Failed to load scoring log</p>';
                 });
         }
+
+        const EVENT_NAMES = {
+            auto_fuel: 'AUTO FUEL',
+            teleop_fuel: 'TELEOP FUEL',
+            leave: 'LEAVE',
+            park: 'PARK',
+            minor_foul: 'MINOR FOUL',
+            major_foul: 'MAJOR FOUL',
+            connection: 'CONNECTION'
+        };
 
         function displayScoringLog(events) {
             const logContainer = document.getElementById('scoring-log');
@@ -400,79 +287,37 @@
                 return;
             }
 
-            logContainer.innerHTML = events.map((event, index) => {
+            logContainer.innerHTML = events.map(event => {
                 const time = new Date(event.timestamp).toLocaleTimeString();
-                const allianceColor = event.alliance === 'red' ? '#ff3333' : '#3333ff';
+                const allianceColor = event.alliance === 'red' ? '#ff3333' : event.alliance === 'blue' ? '#3333ff' : '#aaa';
+                const detail = event.details ? ` (${event.details})` : '';
                 return `
                     <div class="log-entry" data-event-id="${event.id}">
                         <span class="log-time">${time}</span>
-                        <span class="log-alliance" style="color: ${allianceColor}">${event.alliance?.toUpperCase() || 'N/A'}</span>
-                        <span class="log-type">${formatEventType(event.event_type)}</span>
+                        <span class="log-alliance" style="color: ${allianceColor}">${event.alliance?.toUpperCase() || 'BOTH'}</span>
+                        <span class="log-type">${EVENT_NAMES[event.event_type] || event.event_type}${detail}</span>
                         <span class="log-points">+${event.points}pts</span>
                         <button class="delete-event-btn" data-event-id="${event.id}">❌</button>
                     </div>
                 `;
             }).join('');
 
-            // Add delete event listeners
             document.querySelectorAll('.delete-event-btn').forEach(btn => {
                 btn.addEventListener('click', () => {
-                    const eventId = btn.dataset.eventId;
-                    deleteEvent(eventId);
+                    if (!confirm('Delete this scoring event?')) return;
+                    socket.emit('delete_event', { event_id: Number(btn.dataset.eventId), match_id: currentMatchId });
                 });
             });
         }
 
-        function formatEventType(type) {
-            const typeMap = {
-                'bucket_normal': 'Bucket (Normal)',
-                'bucket_bonus': 'Bucket (Bonus)',
-                'human_bucket': 'Human Bucket',
-                'park': 'Park',
-                'slight_ramp': 'Slight Ramp',
-                'climb': 'Climb',
-                'foul': 'Foul',
-                'tech_foul': 'Tech Foul'
-            };
-            return typeMap[type] || type;
-        }
-
-        function deleteEvent(eventId) {
-            if (!confirm('Delete this scoring event?')) return;
-            
-            socket.emit('delete_event', { event_id: eventId, match_id: currentMatchId });
-        }
-
-        // Add event button
+        // Add event button (review mode): explicit alliance + type, server sets points
         document.getElementById('add-event-btn').addEventListener('click', () => {
-            const alliance = document.getElementById('add-event-alliance').value;
-            const eventType = document.getElementById('add-event-type').value;
-            
-            let points = 0;
-            switch(eventType) {
-                case 'bucket_normal': points = 6; break;
-                case 'bucket_bonus': points = 12; break;
-                case 'human_bucket': points = 3; break;
-                case 'park': points = 2; break;
-                case 'slight_ramp': points = 6; break;
-                case 'climb': points = 14; break;
-                case 'foul': points = 2; break;
-                case 'tech_foul': points = 5; break;
-            }
-            
-            if (currentMatchId) {
-                socket.emit('score_event', {
-                    match_id: currentMatchId,
-                    alliance: alliance,
-                    event_type: eventType,
-                    points: points
-                });
-                
-                // Reload events after a short delay
-                setTimeout(() => {
-                    loadMatchEvents();
-                }, 300);
-            }
+            if (!currentMatchId) return;
+            socket.emit('score_event', {
+                match_id: currentMatchId,
+                alliance: document.getElementById('add-event-alliance').value,
+                event_type: document.getElementById('add-event-type').value
+            });
         });
 
         // Exit review button
@@ -491,15 +336,8 @@
 
         // Listen for event deletions
         socket.on('event_deleted', (data) => {
-            loadMatchEvents();
-            // Update main scores
-            document.querySelector('.red-score').textContent = data.red_score;
-            document.querySelector('.blue-score').textContent = data.blue_score;
-        });
-
-        socket.on('scores_updated', (data) => {
-            document.querySelector('.red-score').textContent = data.red_score;
-            document.querySelector('.blue-score').textContent = data.blue_score;
+            if (reviewMode) loadMatchEvents();
+            updateScores(data);
         });
     </script>
 </body>

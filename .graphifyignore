@@ -1,0 +1,5 @@
+# Keep the knowledge graph to our own code + templates
+static/js/lib/
+static/img/
+static/sounds/
+scripts/
