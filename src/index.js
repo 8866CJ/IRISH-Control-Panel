@@ -418,7 +418,9 @@ export class Field extends DurableObject {
   /** A page that (re)connects catches up: displays get the current screen, phones the running match. */
   async sync(ws) {
     const s = await this.state();
-    const screen = await this.ctx.storage.get('screen');
+    let screen = await this.ctx.storage.get('screen');
+    // A running match always owns the display, whatever else last touched the screen.
+    if (s.running && s.matchId) screen = { ...screen, name: 'live', matchId: s.matchId };
     if (screen?.name) {
       const out = { screen: screen.name, review: Boolean(screen.review), data: screen.prematch || null, timer: null };
       const sm = screen.name === 'live' || screen.name === 'postmatch' ? await this.getMatch(screen.matchId) : null;
@@ -524,6 +526,8 @@ const HANDLERS = {
   },
 
   async fta_ready_display() {
+    // The FTA page sends this every time it loads; don't yank a running match off the display.
+    if ((await this.state()).running) return;
     await this.setScreen({ name: 'ready', review: false });
     this.broadcast('show_ready_for_match');
   },
@@ -562,6 +566,11 @@ const HANDLERS = {
       data.match_type || 'Qualification', now(), remaining, +(period === 'END GAME'), id);
     await this.recount(id);
 
+    // Starting over a running match: stop the old one instead of leaving it stuck in_progress.
+    const prev = await this.state();
+    if (prev.running && prev.matchId && prev.matchId !== id) {
+      await this.run("UPDATE match SET status = 'stopped', match_time_remaining = 0, is_endgame = 0 WHERE id = ?", prev.matchId);
+    }
     const nextTick = Date.now() + 1000;
     await this.setState({ matchId: id, running: true, fault: false, nextTick, clearEndgame: false });
     await this.ctx.storage.setAlarm(nextTick);
