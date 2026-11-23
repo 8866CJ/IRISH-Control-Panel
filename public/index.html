@@ -24,6 +24,12 @@
 <audio id="audio-warning" preload="auto">
     <source src="/static/sounds/warning.wav" type="audio/wav">
 </audio>
+<audio id="audio-resume" preload="auto">
+    <source src="/static/sounds/resume.wav" type="audio/wav">
+</audio>
+<audio id="audio-shift" preload="auto">
+    <source src="/static/sounds/shift_change.wav" type="audio/wav">
+</audio>
     <!-- Create an alert on first start to make sure the user interacts with the webpage in order to play sound-->
     <script>
         window.onload = function() {
@@ -184,7 +190,7 @@
                     <div class="rp-indicators">
                         <span id="postmatch-red-win-rp" class="rp-icon">🏆</span>
                         <span id="postmatch-red-auto-rp" class="rp-icon" title="AUTO BONUS">🤖</span>
-                        <span id="postmatch-red-fuel-rp" class="rp-icon" title="FUEL BONUS">⛽</span>
+                        <span id="postmatch-red-fuel-rp" class="rp-icon" title="FUEL BONUS">🟡</span>
                         <span id="postmatch-red-connection-rp" class="rp-icon" title="CONNECTION">🔗</span>
                     </div>
                 </div>
@@ -193,7 +199,7 @@
                     <div class="rp-indicators">
                         <span id="postmatch-blue-win-rp" class="rp-icon">🏆</span>
                         <span id="postmatch-blue-auto-rp" class="rp-icon" title="AUTO BONUS">🤖</span>
-                        <span id="postmatch-blue-fuel-rp" class="rp-icon" title="FUEL BONUS">⛽</span>
+                        <span id="postmatch-blue-fuel-rp" class="rp-icon" title="FUEL BONUS">🟡</span>
                         <span id="postmatch-blue-connection-rp" class="rp-icon" title="CONNECTION">🔗</span>
                     </div>
                 </div>
@@ -205,7 +211,8 @@
         const socket = io();
         let currentScreen = 'prematch';
         let teamRankings = {};  // Cache for team rankings
-        let lastPeriod = null;  // for the AUTO -> TELEOP horn
+        let last = { period: null, clock: null };  // previous timer tick, for period-change sounds
+        let restored = false;  // got the screen from the server, ignore the initial fallback fetch
 
         // Fetch team rankings from API
         async function fetchTeamRankings() {
@@ -405,7 +412,7 @@
             document.getElementById('audio-start').play().catch(e => console.log('Audio play failed:', e));
             // Hide indicators initially
             document.getElementById('endgame-indicator').style.display = 'none';
-            lastPeriod = 'AUTO';
+            last = { period: null, clock: null };
             document.getElementById('field-fault-banner').style.display = 'none';
             document.getElementById('review-banner').style.display = 'none';
         });
@@ -445,19 +452,46 @@
             document.getElementById('live-blue-score').textContent = data.blue_score;
         });
 
-        socket.on('timer_update', (data) => {
+        function play(id) {
+            document.getElementById(id).play().catch(e => console.log('Audio play failed:', e));
+        }
+
+        // Which side of the HUB each alliance scores in, and how long until they swap.
+        function renderHubIndicator(data) {
+            const el = document.getElementById('bonus-indicator');
+            if (data.period === 'END GAME' || !data.period) {
+                el.style.display = 'none';
+                return;
+            }
+            el.style.display = 'block';
+            if (data.period === 'AUTO') {
+                el.className = 'bonus-indicator';
+                el.textContent = 'AUTO';
+                return;
+            }
+            const redSide = data.red_side_alliance === 'red' ? 'RED' : 'BLUE';
+            const blueSide = redSide === 'RED' ? 'BLUE' : 'RED';
+            const swap = data.next_swap_in;
+            el.className = 'bonus-indicator hub-shift';
+            el.innerHTML = `
+                <span class="period-name">${data.period}</span>
+                <span class="hub-pills">
+                    <span class="hub-pill red">RED → ${redSide} SIDE</span>
+                    <span class="hub-pill blue">BLUE → ${blueSide} SIDE</span>
+                </span>
+                ${swap != null ? `<span class="swap-countdown${swap <= 5 ? ' soon' : ''}">SIDES SWAP IN ${swap}</span>` : ''}`;
+        }
+
+        // silent: restoring after a reload, so no horns
+        function applyTimer(data, silent) {
             const timerElement = document.getElementById('match-time');
             const fieldFaultBanner = document.getElementById('field-fault-banner');
-            
-            console.log('Timer update - field_fault:', data.field_fault);  // Debug log
-            
-            // Check if field fault is active
+
             if (data.field_fault) {
                 timerElement.textContent = '';
                 timerElement.style.color = '#ff0000';
                 timerElement.style.animation = 'pulse 1s infinite';
                 fieldFaultBanner.style.display = 'block';
-                console.log('Field fault banner should be visible');  // Debug log
             } else {
                 const minutes = Math.floor(data.time_remaining / 60);
                 const seconds = data.time_remaining % 60;
@@ -467,28 +501,48 @@
                 fieldFaultBanner.style.display = 'none';
             }
 
+            const endgameIndicator = document.getElementById('endgame-indicator');
             if (data.is_endgame) {
-                const endgameIndicator = document.getElementById('endgame-indicator');
                 // Only play sound if endgame just started (wasn't visible before)
-                if (endgameIndicator.style.display !== 'block') {
-                    document.getElementById('audio-warning').play().catch(e => console.log('Audio play failed:', e));
-                }
+                if (!silent && endgameIndicator.style.display !== 'block') play('audio-warning');
                 endgameIndicator.style.display = 'block';
+            } else {
+                endgameIndicator.style.display = 'none';
             }
 
-            // Period + which alliance each HUB side is crediting
-            const indicator = document.getElementById('bonus-indicator');
-            const redSide = data.red_side_alliance === 'red' ? 'RED' : 'BLUE';
-            indicator.style.display = 'block';
-            indicator.textContent = data.period === 'AUTO' || data.period === 'END GAME'
-                ? data.period
-                : `${data.period} · RED SIDE → ${redSide}`;
+            renderHubIndicator(data);
 
-            // Teleop start horn
-            if (lastPeriod === 'AUTO' && data.period !== 'AUTO') {
-                document.getElementById('audio-start').play().catch(e => console.log('Audio play failed:', e));
+            // AUTO start (start.wav, on show_live) -> AUTO end (end) -> TELEOP start (resume) -> each swap (shift_change)
+            if (!silent && last.period) {
+                if (last.period === 'AUTO' && data.period === 'AUTO' && data.time_remaining === 0 && last.clock > 0) play('audio-end');
+                else if (last.period === 'AUTO' && data.period !== 'AUTO') play('audio-resume');
+                else if (data.period !== last.period && data.period !== 'END GAME') play('audio-shift');
             }
-            lastPeriod = data.period;
+            last = { period: data.period, clock: data.time_remaining };
+        }
+
+        socket.on('timer_update', (data) => applyTimer(data, false));
+
+        // On (re)load the server says which screen the FTA has up, so an accidental reload lands on the right one.
+        socket.on('screen_state', (state) => {
+            restored = true;
+            document.getElementById('review-banner').style.display = state.review ? 'block' : 'none';
+            document.getElementById('match-time').style.display = state.review ? 'none' : 'block';
+            if (state.screen === 'ready') {
+                clearPrematchData();
+                showScreen('prematch');
+            } else if (state.screen === 'prematch') {
+                if (state.data) updatePrematchData(state.data);
+                showScreen('prematch');
+            } else if (state.screen === 'live' && state.data) {
+                updateLiveData(state.data);
+                document.getElementById('endgame-indicator').style.display = 'none';
+                if (state.timer) applyTimer(state.timer, true);
+                showScreen('live');
+            } else if (state.screen === 'postmatch' && state.data) {
+                updatePostmatchData(state.data);
+                showScreen('postmatch');
+            }
         });
 
         socket.on('show_review', () => {
@@ -531,6 +585,7 @@
         fetch('/api/current_match')
             .then(response => response.json())
             .then(data => {
+                if (restored) return; // the server already told us what to show
                 updatePrematchData(data);
                 updateLiveData(data);
             });

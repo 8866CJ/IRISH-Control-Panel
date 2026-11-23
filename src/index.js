@@ -54,6 +54,12 @@ export class Field extends DurableObject {
   }
   setState(s) { return this.ctx.storage.put('clock', s); }
 
+  /** What the audience display should be showing, so a reloaded display can restore it. */
+  async setScreen(patch) {
+    const cur = (await this.ctx.storage.get('screen')) || {};
+    await this.ctx.storage.put('screen', { ...cur, ...patch });
+  }
+
   /** Event PIN check with a crude lockout: 20 wrong tries a minute, then everyone waits. */
   checkPin(pin) {
     const expected = this.env.EVENT_PIN;
@@ -84,11 +90,13 @@ export class Field extends DurableObject {
 
   timerPayload(m, fault) {
     const [period, clock, redSide] = game.matchState(game.MATCH_LENGTH - m.match_time_remaining);
+    const segment = game.SEGMENTS.find(([name]) => name === period);
     return {
       match_id: m.id,
       time_remaining: clock,
       period,
       is_endgame: period === 'END GAME',
+      next_swap_in: segment && period !== 'END GAME' ? clock - segment[1] : null, // seconds until the HUB sides swap
       red_side_alliance: redSide, // which alliance FUEL in the RED side of the HUB counts for
       field_fault: fault,
     };
@@ -349,9 +357,22 @@ export class Field extends DurableObject {
     try { ws.close(code); } catch { /* already closed */ }
   }
 
-  /** A phone that (re)connects mid-match catches up without waiting for the next event. */
+  /** A page that (re)connects catches up: displays get the current screen, phones the running match. */
   async sync(ws) {
     const s = await this.state();
+    const screen = await this.ctx.storage.get('screen');
+    if (screen?.name) {
+      const out = { screen: screen.name, review: Boolean(screen.review), data: screen.prematch || null, timer: null };
+      const sm = screen.name === 'live' || screen.name === 'postmatch' ? await this.getMatch(screen.matchId) : null;
+      if (sm) {
+        out.data = this.matchDict(sm);
+        if (screen.name === 'live') {
+          const running = s.running && s.matchId === sm.id;
+          out.timer = running ? this.timerPayload(sm, s.fault) : { ...this.timerPayload(sm, false), is_endgame: false };
+        }
+      }
+      this.send(ws, 'screen_state', out);
+    }
     const m = s.running ? await this.getMatch(s.matchId) : null;
     if (!m) return;
     this.send(ws, 'match_started', { ...this.matchDict(m), status: 'in_progress' });
@@ -443,19 +464,22 @@ const HANDLERS = {
     this.send(ws, 'match_data_saved', { match_id: id });
   },
 
-  fta_ready_display() {
+  async fta_ready_display() {
+    await this.setScreen({ name: 'ready', review: false });
     this.broadcast('show_ready_for_match');
   },
 
-  fta_update_display(data) {
-    this.broadcast('show_prematch', {
+  async fta_update_display(data) {
+    const prematch = {
       match_type: data.match_type || '?',
       match_number: data.match_number || '?',
       red_team1: data.red_team1 || '????',
       red_team2: data.red_team2 || '????',
       blue_team1: data.blue_team1 || '????',
       blue_team2: data.blue_team2 || '????',
-    });
+    };
+    await this.setScreen({ name: 'prematch', prematch, review: false });
+    this.broadcast('show_prematch', prematch);
   },
 
   async fta_start_match(data) {
@@ -485,6 +509,7 @@ const HANDLERS = {
 
     const m = await this.getMatch(id);
     const payload = this.matchDict(m);
+    await this.setScreen({ name: 'live', matchId: id, review: false });
     this.broadcast('show_live', payload);
     this.broadcast('timer_update', this.timerPayload(m, false));
     this.broadcast('match_started', { ...payload, status: 'in_progress' });
@@ -513,6 +538,7 @@ const HANDLERS = {
     await this.setState({ ...s, running: false, fault: false });
     await this.ctx.storage.deleteAlarm();
     await this.run("UPDATE match SET status = 'stopped', match_time_remaining = 0, is_endgame = 0 WHERE id = ?", id);
+    await this.setScreen({ name: 'prematch', review: false }); // display falls back to its pre-match screen
     this.broadcast('match_stopped', { match_id: id });
   },
 
@@ -526,11 +552,13 @@ const HANDLERS = {
     this.broadcast('match_finalized', { match_id: id, red_score: m.red_score, blue_score: m.blue_score });
   },
 
-  fta_show_review(data) {
+  async fta_show_review(data) {
+    await this.setScreen({ review: true });
     this.broadcast('show_review', { match_id: data.match_id ?? null });
   },
 
-  fta_hide_review() {
+  async fta_hide_review() {
+    await this.setScreen({ review: false });
     this.broadcast('hide_review');
   },
 
@@ -546,6 +574,7 @@ const HANDLERS = {
       await this.run("UPDATE match SET status = 'completed', end_time = COALESCE(end_time, ?) WHERE id = ?", now(), m.id);
     }
     await this.calculateRps(m.id);
+    await this.setScreen({ name: 'postmatch', matchId: m.id, review: false });
     this.broadcast('show_postmatch', this.matchDict(await this.getMatch(m.id)));
   },
 };

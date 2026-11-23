@@ -205,6 +205,7 @@ header {
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    text-align: center; /* every line in the indicators/banners, not just the boxes */
 }
 
 .time {
@@ -213,6 +214,7 @@ header {
     color: #ffffff;
     margin-bottom: 20px;
     text-align: center;
+    font-variant-numeric: tabular-nums; /* digits keep the same width so the clock doesn't shift each second */
 }
 
 .endgame-indicator {
@@ -469,4 +471,42 @@ header {
 @keyframes pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.4; }
+}
+
+/* TELEOP shift indicator: which HUB side each alliance scores in + countdown to the swap */
+.bonus-indicator.hub-shift {
+    animation: none;
+    color: #fff;
+    font-size: 2.2em;
+}
+.hub-shift .period-name {
+    display: block;
+    font-size: 0.6em;
+    letter-spacing: 0.12em;
+    color: #ffd93d;
+}
+.hub-shift .hub-pills {
+    display: flex;
+    flex-direction: column; /* always stacked, so the block never jumps between 1 and 2 rows */
+    align-items: center;
+    gap: 0.25em;
+    margin: 0.25em 0;
+}
+.hub-shift .hub-pill {
+    padding: 0.1em 0.45em;
+    border-radius: 0.3em;
+    font-size: 0.75em;
+    white-space: nowrap;
+}
+.hub-shift .hub-pill.red { background: #c62828; }
+.hub-shift .hub-pill.blue { background: #1565c0; }
+.hub-shift .swap-countdown {
+    display: block;
+    font-size: 0.65em;
+    color: #ffd93d;
+    font-variant-numeric: tabular-nums;
+}
+.hub-shift .swap-countdown.soon {
+    color: #ff6b6b;
+    animation: pulse 1s infinite;
 }
