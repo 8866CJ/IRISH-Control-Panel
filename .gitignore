@@ -22,3 +22,8 @@ build/
 
 # graphify knowledge graph output (rebuild with /graphify)
 graphify-out/
+
+# Cloudflare / wrangler
+node_modules/
+.wrangler/
+.dev.vars

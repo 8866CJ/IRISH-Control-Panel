@@ -1,0 +1,38 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "irishcontrol",
+  "main": "src/index.js",
+  "compatibility_date": "2025-11-01",
+
+  // Pages in ./public are served directly; only the API and WebSocket hit the Worker.
+  // "/fta" serves public/fta.html, "/" serves public/index.html (the audience display).
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "run_worker_first": ["/api/*", "/ws"]
+  },
+
+  // One Durable Object runs the live field: sockets, match clock, scoring.
+  "durable_objects": {
+    "bindings": [{ "name": "FIELD", "class_name": "Field" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Field"] }],
+
+  // Teams, matches, events, rankings.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "irishcontrol",
+      "database_id": "f882fd71-2a1b-408d-8a33-bd71377d99e3",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  "routes": [{ "pattern": "irish.frc8866.org", "custom_domain": true }],
+  "workers_dev": true,
+  "observability": { "enabled": true }
+
+  // Secret (not in this file): EVENT_PIN — set with `npx wrangler secret put EVENT_PIN`.
+  // Locally it comes from .dev.vars.
+}

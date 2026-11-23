@@ -15,80 +15,56 @@ Field management system for IRISH 2026 (**BUILT**), Team 8866's off-season event
 - FUEL scored by HUB side: the FMS credits the right alliance from the shift table, with the 3s grace after each swap
 - AUTO FUEL 4 pts, TELEOP FUEL 2 pts, LEAVE 3 pts, PARK 2 pts
 - MINOR FOUL +2 / MAJOR FOUL +6 to the opponent
-- Point values and the FUEL BONUS threshold live in `game.py`
+- Point values and the FUEL BONUS threshold live in `src/game.js`
 
 ### Ranking Points
-- Win 3 / Tie 1, AUTO BONUS (both robots LEAVE + 5 AUTO FUEL), FUEL BONUS (80 FUEL, edit `FUEL_BONUS_THRESHOLD`), CONNECTION (both alliances)
+- Win 3 / Tie 1, AUTO BONUS (both robots LEAVE + 5 AUTO FUEL), FUEL BONUS (80 FUEL, edit `FUEL_BONUS_THRESHOLD` in `src/game.js`), CONNECTION (both alliances)
 - Only qualification matches add RP to rankings
-- Run `python game.py` to self-check the rules
+- Run `npm test` to check the rules
 
 ### Interfaces
 - **FTA Panel**: Match setup, timer control, field fault management
-- **Referee Panel**: Live scoring controls for both alliances
+- **Referee Panel** (phone-first): pick a role (Red HUB / Blue HUB / Referee / All), big buttons, Undo for your own taps
 - **Display Panel**: Real-time scoreboard with pre-match, live, and post-match views
 
 ### Data & Communication
-- SQLite database for persistent match data
+- Cloudflare D1 database for teams, matches, events and rankings
 - WebSocket-based real-time updates across all interfaces
 - Event logging and match history
 - Audio notifications for match events
 
-## Quick Start
+## Live site
 
-1. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+- Audience display: https://irish.frc8866.org/
+- FTA: https://irish.frc8866.org/fta · Referees/scorers: https://irish.frc8866.org/referee · Admin: https://irish.frc8866.org/admin · Rankings: https://irish.frc8866.org/rankings
+- `irishcontrol.pages.dev` only redirects to irish.frc8866.org.
 
-2. Run the application:
-   ```bash
-   python app.py
-   ```
+FTA, referee and admin pages ask for the **event PIN** once per device (set it with `npx wrangler secret put EVENT_PIN`; use a long one). Display and rankings are public.
 
-3. Access interfaces:
-   - Main Display: `http://localhost:5000/`
-   - FTA Panel: `http://localhost:5000/fta`
-   - Referee Panel: `http://localhost:5000/referee`
-   ## Recommended: Create a reproducible venv (Windows, Python 3.12.7)
+## How it runs (Cloudflare)
 
-   To make development and dependency installation consistent, you can create a Python 3.12.7 virtual environment for this project.
+- **Worker** `irishcontrol` (`src/index.js`) serves the pages in `public/` and forwards `/api/*` and `/ws` to...
+- **Durable Object** `Field`: holds every WebSocket, runs the match clock (1s alarms), handles scoring and the API, so everything happens in order.
+- **D1** `irishcontrol`: schema in `migrations/`.
+- Pages talk to it through `public/static/js/socket-shim.js` (a tiny `io()` stand-in over plain WebSocket that reconnects on its own).
 
-   1. From File Explorer, double-click:
-      - `scripts\create_venv_3.12.7.bat` — This will create `.venv-3.12.7` in the repo root and install dependencies from `requirements.txt`. It uses `py -3.12` if available, or `python` on PATH when it is Python 3.12.
+## Commands (Windows PowerShell)
 
-   2. To open a new PowerShell window with the venv already activated, double-click:
-      - `scripts\open_venv_3.12.7.bat` — This launches PowerShell and runs the virtual environment's `Activate.ps1` file.
+Install once: `npm install`
 
-   3. OR, from an existing PowerShell session in the project root, run:
-      ```powershell
-      . .\.venv-3.12.7\Scripts\Activate.ps1
-      ```
+| Task | Command |
+| --- | --- |
+| Run everything locally (offline backup at the venue) | `npm run dev` then open http://localhost:8787 (PIN comes from `.dev.vars`) |
+| Check the game rules | `npm test` |
+| Deploy to Cloudflare | `npm run deploy` |
+| Deploy the pages.dev redirect | `npm run deploy:pages` |
+| Set / change the event PIN | `npx wrangler secret put EVENT_PIN` |
 
-   Notes:
-   - If you don't yet have Python 3.12.7 installed, the create script will prompt you to download and install Python 3.12.7 from https://www.python.org/downloads/release/python-3127/.
-   - Some Windows systems prevent PowerShell scripts from executing by default. The batch script launches PowerShell with `-ExecutionPolicy Bypass` so activation can run without changing system policies.
-   - The venv is created in `.venv-3.12.7` so you can have multiple venvs for different Python versions.
+For local dev create `.dev.vars` containing `EVENT_PIN=something` (it's git-ignored).
 
 ## Technology Stack
 
-- **Backend**: Flask with Socket.IO
-- **Database**: SQLAlchemy with SQLite
+- **Backend**: Cloudflare Workers + Durable Objects
+- **Database**: Cloudflare D1 (SQLite)
 - **Frontend**: HTML/CSS/JavaScript
-- **Real-time**: WebSocket communication
-
-## Common Runtime Notes & Known Warnings ⚠️
-
-- You may occasionally see stack traces in development logs similar to:
-   ```
-   ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
-   ```
-   This typically happens when a client cancels a request (for example, a browser cancels an audio file range download). It is harmless and happens inside the WSGI server (eventlet) while writing a response.
-
-- If you want to reduce or remove these stack traces in logs, the app now suppresses these specific exceptions in server logs. Alternatively, you can:
-   - Install/upgrade `eventlet` to the latest version: `pip install --upgrade eventlet`
-   - Switch to `gevent` as your async server in `requirements.txt` and set `SocketIO(..., async_mode='gevent')` in `app.py`.
-
-- If you see repeated aborted connections, check:
-   - Client behavior (browser or app disconnects, stopping audio playback)
-   - Local antivirus or firewall software that might be interrupting connections
-   - Network instability that causes clients to drop connections
+- **Real-time**: WebSockets (Durable Object hibernation API)

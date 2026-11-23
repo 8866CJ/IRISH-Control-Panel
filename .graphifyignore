@@ -1,5 +1,7 @@
-# Keep the knowledge graph to our own code + templates
-static/js/lib/
-static/img/
-static/sounds/
-scripts/
+# Keep the knowledge graph to our own code + pages
+public/static/js/lib/
+public/static/img/
+public/static/sounds/
+node_modules/
+.wrangler/
+pages-redirect/

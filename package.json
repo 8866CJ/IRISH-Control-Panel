@@ -1,0 +1,14 @@
+{
+  "name": "irish-control-panel",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler d1 migrations apply DB --local && wrangler dev",
+    "deploy": "wrangler d1 migrations apply DB --remote && wrangler deploy",
+    "deploy:pages": "wrangler pages deploy pages-redirect --project-name irishcontrol --branch main",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "wrangler": "4.158.0"
+  }
+}

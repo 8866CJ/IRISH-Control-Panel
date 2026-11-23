@@ -4,27 +4,26 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>IRISH Competition Display</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/unified_display.css') }}">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    <link rel="stylesheet" href="/static/css/unified_display.css">
+    <script src="/static/js/socket-shim.js"></script>
 </head>
 <body>
     <!-- Audio elements for match sounds -->
 <audio id="audio-start" preload="auto">
-    <source src="https://cdn.jsdelivr.net/gh/8866CJ/IRISH-Control-Panel@main/static/sounds/start.wav" type="audio/wav">
+    <source src="/static/sounds/start.wav" type="audio/wav">
 </audio>
 <audio id="audio-end" preload="auto">
-    <source src="https://cdn.jsdelivr.net/gh/8866CJ/IRISH-Control-Panel@main/static/sounds/end.wav" type="audio/wav">
+    <source src="/static/sounds/end.wav" type="audio/wav">
 </audio>
 <audio id="audio-abort" preload="auto">
-    <source src="https://cdn.jsdelivr.net/gh/8866CJ/IRISH-Control-Panel@main/static/sounds/abort.wav" type="audio/wav">
+    <source src="/static/sounds/abort.wav" type="audio/wav">
 </audio>
 <audio id="audio-match-result" preload="auto">
-    <source src="https://cdn.jsdelivr.net/gh/8866CJ/IRISH-Control-Panel@main/static/sounds/match_result.wav" type="audio/wav">
+    <source src="/static/sounds/match_result.wav" type="audio/wav">
 </audio>
 <audio id="audio-warning" preload="auto">
-    <source src="https://cdn.jsdelivr.net/gh/8866CJ/IRISH-Control-Panel@main/static/sounds/warning.wav" type="audio/wav">
+    <source src="/static/sounds/warning.wav" type="audio/wav">
 </audio>
-    </audio>
     <!-- Create an alert on first start to make sure the user interacts with the webpage in order to play sound-->
     <script>
         window.onload = function() {
