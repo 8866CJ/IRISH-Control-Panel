@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IRISH Control Panel Demo</title>
+  <script src="/static/js/socket-shim.js"></script>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #000; color: #eee; font-family: Arial, sans-serif; }
+    main { max-width: 640px; margin: 0 auto; padding: 24px 16px 48px; }
+    h1 { margin: 0 0 4px; font-size: 28px; }
+    p { color: #aaa; line-height: 1.45; }
+    .note { background: #f5b800; color: #111; padding: 10px 12px; border-radius: 8px; font-weight: 600; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin: 20px 0; }
+    a.card { display: block; padding: 14px; border-radius: 10px; background: #1a1a1a; border: 1px solid #333; color: #fff; text-decoration: none; }
+    a.card:hover { border-color: #2980b9; }
+    a.card b { display: block; font-size: 17px; margin-bottom: 4px; }
+    a.card span { color: #999; font-size: 13px; }
+    .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 12px 0; }
+    button { font: inherit; padding: 12px 16px; border-radius: 8px; border: 0; cursor: pointer; background: #2980b9; color: #fff; }
+    button.danger { background: #c0392b; }
+    label.toggle { display: flex; gap: 10px; align-items: center; padding: 12px 14px; background: #1a1a1a; border-radius: 8px; border: 1px solid #333; cursor: pointer; }
+    input[type=checkbox] { width: 20px; height: 20px; }
+    #status { color: #7fd17f; min-height: 1.4em; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>IRISH Control Panel demo</h1>
+  <p>Every page here runs against its own throwaway field and database. Nothing you do touches real matches, teams or rankings. Tap anything you like.</p>
+  <p class="note">Open the Display on a big screen and the Referee page on a phone, then start a match from FTA.</p>
+
+  <div class="grid">
+    <a class="card" href="/demo/display" target="_blank"><b>Live display</b><span>Audience screen</span></a>
+    <a class="card" href="/demo/fta" target="_blank"><b>FTA</b><span>Set up, start and stop matches</span></a>
+    <a class="card" href="/demo/referee" target="_blank"><b>Referee</b><span>Phone scoring</span></a>
+    <a class="card" href="/demo/rankings" target="_blank"><b>Rankings</b><span>Team standings</span></a>
+    <a class="card" href="/demo/admin" target="_blank"><b>Admin</b><span>Matches, teams, events</span></a>
+  </div>
+
+  <label class="toggle"><input type="checkbox" id="autoplay"> Auto-play: a bot scores fake points while a match runs</label>
+  <div class="row">
+    <button id="start">Start a demo match</button>
+    <button id="reset" class="danger">Reset demo</button>
+  </div>
+  <div id="status"></div>
+</main>
+<script>
+  const socket = io();
+  const status = (t) => { document.getElementById('status').textContent = t; };
+  const post = (url, body) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) }).then((r) => r.json());
+  const box = document.getElementById('autoplay');
+
+  fetch('/api/demo/autoplay').then((r) => r.json()).then((d) => { box.checked = d.on; });
+  box.onchange = () => post('/api/demo/autoplay', { on: box.checked }).then((d) => status(d.on ? 'Auto-play on' : 'Auto-play off'));
+
+  let teams = [8866, 254, 1678, 118];
+  document.getElementById('reset').onclick = async () => {
+    if (!confirm('Wipe the demo field and start fresh?')) return;
+    const d = await post('/api/demo/reset');
+    if (d.teams) teams = d.teams;
+    box.checked = false;
+    status('Demo reset with ' + teams.length + ' fake teams');
+  };
+
+  document.getElementById('start').onclick = async () => {
+    const matches = await fetch('/api/matches').then((r) => r.json()).catch(() => []);
+    const pick = [...teams].sort(() => Math.random() - 0.5);
+    socket.emit('fta_start_match', {
+      match_number: matches.length + 1, match_type: 'Qualification',
+      red_team1: pick[0], red_team2: pick[1], blue_team1: pick[2], blue_team2: pick[3],
+    });
+    status('Match ' + (matches.length + 1) + ' starting. Watch the display.');
+  };
+</script>
+</body>
+</html>

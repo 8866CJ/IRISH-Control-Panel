@@ -7,8 +7,12 @@
 (function () {
   const STAFF = document.currentScript && document.currentScript.hasAttribute('data-staff');
   const KEY = 'irish-event-pin';
+  // Under /demo/ the same pages talk to a throwaway copy of the field: no PIN, no real data.
+  const DEMO = location.pathname === '/demo' || location.pathname.startsWith('/demo/');
+  const BASE = DEMO ? '/demo' : '';
 
   function getPin() {
+    if (DEMO) return null;
     try { return localStorage.getItem(KEY); } catch (e) { return null; }
   }
   function askPin(message) {
@@ -16,7 +20,7 @@
     try { pin ? localStorage.setItem(KEY, pin) : localStorage.removeItem(KEY); } catch (e) { /* private mode */ }
     return pin;
   }
-  if (STAFF && !getPin()) askPin('Enter the event PIN');
+  if (STAFF && !DEMO && !getPin()) askPin('Enter the event PIN');
 
   // API calls carry the PIN; a 401 asks for it again once and retries.
   const rawFetch = window.fetch.bind(window);
@@ -28,10 +32,10 @@
       const headers = new Headers(init.headers || {});
       const pin = getPin();
       if (pin) headers.set('X-Event-PIN', pin);
-      return rawFetch(input, Object.assign({}, init, { headers }));
+      return rawFetch(BASE + url, Object.assign({}, init, { headers }));
     };
     let res = await send();
-    if (res.status === 401 && askPin('Wrong or missing event PIN. Enter it again:')) res = await send();
+    if (res.status === 401 && !DEMO && askPin('Wrong or missing event PIN. Enter it again:')) res = await send();
     return res;
   };
 
@@ -46,7 +50,7 @@
 
     function connect() {
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      ws = new WebSocket(`${proto}//${location.host}/ws`);
+      ws = new WebSocket(`${proto}//${location.host}${BASE}/ws`);
       askedThisSocket = false;
       ws.onopen = () => {
         const pin = getPin();
@@ -59,7 +63,7 @@
         let msg;
         try { msg = JSON.parse(e.data); } catch (err) { return; }
         const badPin = msg.event === 'auth_error' || (msg.event === 'auth_result' && !msg.data.ok);
-        if (badPin && STAFF && !askedThisSocket) {
+        if (badPin && STAFF && !DEMO && !askedThisSocket) {
           askedThisSocket = true;
           const pin = askPin('Wrong or missing event PIN. Enter it again, then repeat your last tap:');
           if (pin) { ws.send(raw('auth', { pin })); askedThisSocket = false; }
@@ -81,4 +85,16 @@
       },
     };
   };
+
+  if (DEMO && location.pathname.replace(/\/$/, '') !== '/demo') {
+    const add = () => {
+      const a = document.createElement('a');
+      a.href = '/demo/';
+      a.textContent = 'DEMO · not real data';
+      a.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:8px;z-index:99999;padding:4px 10px;border-radius:999px;'
+        + 'background:#f5b800;color:#111;font:600 12px system-ui,sans-serif;text-decoration:none;opacity:.9';
+      document.body.appendChild(a);
+    };
+    document.body ? add() : document.addEventListener('DOMContentLoaded', add);
+  }
 })();

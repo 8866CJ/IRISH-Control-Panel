@@ -10,7 +10,7 @@
     "directory": "./public",
     "binding": "ASSETS",
     "html_handling": "auto-trailing-slash",
-    "run_worker_first": ["/api/*", "/ws"]
+    "run_worker_first": ["/api/*", "/ws", "/demo", "/demo/*"]
   },
 
   // One Durable Object runs the live field: sockets, match clock, scoring.
@@ -25,6 +25,13 @@
       "binding": "DB",
       "database_name": "irishcontrol",
       "database_id": "f882fd71-2a1b-408d-8a33-bd71377d99e3",
+      "migrations_dir": "migrations"
+    },
+    // Throwaway copy for the /demo pages. Nothing there touches DB.
+    {
+      "binding": "DEMO_DB",
+      "database_name": "irishcontrol-demo",
+      "database_id": "dc1b897f-57dc-43a9-be14-d04e4228b447",
       "migrations_dir": "migrations"
     }
   ],

@@ -6,11 +6,26 @@ import { DurableObject } from 'cloudflare:workers';
 import * as game from './game.js';
 
 export default {
-  // Only /api/* and /ws reach this (see assets.run_worker_first in wrangler.jsonc).
+  // Only /api/*, /ws and /demo/* reach this (see assets.run_worker_first in wrangler.jsonc).
   fetch(request, env) {
-    return env.FIELD.get(env.FIELD.idFromName('irish')).fetch(request);
+    const url = new URL(request.url);
+    if (url.pathname !== '/demo' && !url.pathname.startsWith('/demo/')) {
+      return env.FIELD.get(env.FIELD.idFromName('irish')).fetch(request);
+    }
+    // /demo/<anything> is the same site backed by a separate Field ("demo") and DEMO_DB.
+    let path = url.pathname.slice(5) || '/';
+    if (path === '/api/' || path.startsWith('/api/') || path === '/ws') {
+      url.pathname = path;
+      return env.FIELD.get(env.FIELD.idFromName('demo')).fetch(new Request(url, request));
+    }
+    if (path === '/') path = '/demo/'; // landing page: public/demo/index.html
+    else if (path === '/display') path = '/'; // the audience display is "/" on the real site
+    url.pathname = path;
+    return env.ASSETS.fetch(new Request(url, request));
   },
 };
+
+const DEMO_TEAMS = [8866, 254, 1678, 118, 2056, 1323, 4414, 971];
 
 const TEAM_KEYS = ['red_team1', 'red_team2', 'blue_team1', 'blue_team2'];
 const MATCH_SELECT = `SELECT m.*,
@@ -27,7 +42,8 @@ const toInt = (v) => (/^\d+$/.test(String(v ?? '').trim()) ? Number(String(v).tr
 export class Field extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
-    this.db = env.DB;
+    this.demo = ctx.id.equals(env.FIELD.idFromName('demo'));
+    this.db = this.demo ? env.DEMO_DB : env.DB;
     this.authFails = { count: 0, since: 0 };
   }
 
@@ -62,6 +78,7 @@ export class Field extends DurableObject {
 
   /** Event PIN check with a crude lockout: 20 wrong tries a minute, then everyone waits. */
   checkPin(pin) {
+    if (this.demo) return true; // the demo is open to anyone and holds no real data
     const expected = this.env.EVENT_PIN;
     if (!expected) return false; // fail closed if the secret was never set
     const t = Date.now();
@@ -158,6 +175,45 @@ export class Field extends DurableObject {
     this.broadcast('rankings_updated');
   }
 
+  // ---------- demo only ----------
+
+  async demoApi(path, method, body) {
+    if (path === '/api/demo/autoplay') {
+      if (method === 'POST') await this.ctx.storage.put('autoplay', Boolean(body.on));
+      return json({ on: Boolean(await this.ctx.storage.get('autoplay')) });
+    }
+    if (path === '/api/demo/reset' && method === 'POST') {
+      await this.ctx.storage.deleteAlarm();
+      await this.ctx.storage.deleteAll();
+      await this.db.batch(['match_event', 'match', 'team_ranking', 'team'].map((t) => this.q(`DELETE FROM ${t}`)));
+      await this.db.batch(DEMO_TEAMS.map((n) => this.q('INSERT INTO team (number, name) VALUES (?, ?)', n, `Demo Team ${n}`)));
+      // A few made-up RP so the rankings page isn't empty
+      await this.run('INSERT INTO team_ranking (team_id, ranking_points) SELECT id, ABS(RANDOM()) % 12 FROM team');
+      await this.updateRankings();
+      this.broadcast('show_ready_for_match');
+      return json({ success: true, teams: DEMO_TEAMS });
+    }
+    return json({ error: 'Not found' }, 404);
+  }
+
+  /** Demo autoplay: a fake scorer that taps a few things every second of a running match. */
+  async botTick(m) {
+    const elapsed = game.MATCH_LENGTH - m.match_time_remaining;
+    const [period] = game.matchState(elapsed);
+    const tap = (d) => HANDLERS.score_event.call(this, { match_id: m.id, ...d }, null);
+    const roll = (p) => Math.random() < p;
+    for (const side of ['red', 'blue']) {
+      const n = period === 'AUTO' ? (roll(0.5) ? 1 : 0) : Math.floor(Math.random() * 3);
+      for (let i = 0; i < n; i++) await tap({ event_type: 'fuel', hub_side: side });
+    }
+    for (const a of ['red', 'blue']) {
+      if (period === 'AUTO' && m[`${a}_leave`] < 2 && roll(0.15)) await tap({ event_type: 'leave', alliance: a });
+      if (period === 'END GAME' && m.match_time_remaining <= 8 && m[`${a}_park`] < 2 && roll(0.3)) await tap({ event_type: 'park', alliance: a });
+      if (roll(0.02)) await tap({ event_type: roll(0.75) ? 'minor_foul' : 'major_foul', alliance: a });
+    }
+    if (period === 'END GAME' && !m.connection && roll(0.05)) await tap({ event_type: 'connection' });
+  }
+
   rankChange(r) {
     if (r.previous_rank == null) return '—';
     if (r.current_rank < r.previous_rank) return '↑';
@@ -173,7 +229,7 @@ export class Field extends DurableObject {
       if (request.headers.get('Upgrade') !== 'websocket') return new Response('Expected WebSocket', { status: 426 });
       const [client, server] = Object.values(new WebSocketPair());
       this.ctx.acceptWebSocket(server);
-      server.serializeAttachment({ authed: false });
+      server.serializeAttachment({ authed: this.demo });
       return new Response(null, { status: 101, webSocket: client });
     }
     try {
@@ -191,6 +247,8 @@ export class Field extends DurableObject {
     if (!isRead && !this.checkPin(request.headers.get('X-Event-PIN'))) return json({ error: 'Event PIN required' }, 401);
     const body = method === 'POST' || method === 'PUT' ? await request.json().catch(() => ({})) : {};
     let m;
+
+    if (this.demo && path.startsWith('/api/demo/')) return this.demoApi(path, method, body);
 
     if (path === '/api/current_match' && method === 'GET') {
       const match = (await this.first(`${MATCH_SELECT} WHERE m.status = 'in_progress' LIMIT 1`))
@@ -408,6 +466,7 @@ export class Field extends DurableObject {
         return;
       }
     }
+    if (this.demo && !s.fault && (await this.ctx.storage.get('autoplay'))) await this.botTick(m);
     // Schedule from the planned tick, not "now", so the clock doesn't drift.
     s.nextTick = Math.max(s.nextTick + 1000, Date.now() + 200);
     await this.setState(s);
